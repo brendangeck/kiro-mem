@@ -76,29 +76,29 @@ export interface SearchParams {
 
 /**
  * Result returned to the shim in response to a `POST /v1/events` call. When
- * the shim requested synchronous enrichment, `enrichment` is populated.
+ * the shim requested synchronous retrieval, `retrieval` is populated.
  *
  * Not directly a requirement in this spec; part of the collector API
- * surface consumed by downstream receiver / enrichment specs.
+ * surface consumed by downstream receiver / retrieval specs.
  *
  * @see Requirements 1.5 (re-exported on the package entry point)
  */
 export interface EventIngestResponse {
   event_id: string;
   stored: boolean;
-  enrichment?: EnrichmentResult;
+  retrieval?: RetrievalResult;
 }
 
 /**
- * Context assembled by the enrichment subsystem for a single prompt-time
+ * Context assembled by the retrieval subsystem for a single prompt-time
  * lookup. Returned inline in the ingest response.
  *
  * Not directly a requirement in this spec; part of the collector API
- * surface consumed by downstream enrichment specs.
+ * surface consumed by downstream retrieval specs.
  *
  * @see Requirements 1.5 (re-exported on the package entry point)
  */
-export interface EnrichmentResult {
+export interface RetrievalResult {
   context: string;
   records: string[];
   latency_ms: number;
