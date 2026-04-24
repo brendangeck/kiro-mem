@@ -129,6 +129,8 @@ export interface DedupStageOptions {
 export interface DedupStage extends PipelineProcessor {
   /** Current number of event_ids tracked in the dedup set. */
   readonly size: number;
+  /** Remove an event_id from the set (rollback on downstream failure). */
+  rollback(eventId: string): void;
 }
 
 /**
@@ -154,6 +156,10 @@ export function createDedupStage(
 
     get size(): number {
       return seen.size;
+    },
+
+    rollback(eventId: string): void {
+      seen.delete(eventId);
     },
 
     process(event: KiroMemEvent): StageResult {
@@ -258,7 +264,7 @@ function scrubJsonValue(value: unknown): unknown {
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = scrubJsonValue(v);
+      out[scrubPrivateSpans(k)] = scrubJsonValue(v);
     }
     return out;
   }
@@ -575,6 +581,10 @@ export function createPipeline(opts: PipelineOptions): Pipeline {
         // 2f. Return the response
         return response;
       } catch (error: unknown) {
+        // Roll back the dedup set entry so a retry is not falsely rejected.
+        // The event was not durably stored, so the id must not be remembered.
+        dedupStage.rollback(event.event_id);
+
         const message =
           error instanceof Error ? error.message : String(error);
         console.error(
