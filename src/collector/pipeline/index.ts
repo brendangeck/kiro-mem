@@ -145,8 +145,8 @@ export interface DedupStage extends PipelineProcessor {
 export function createDedupStage(
   opts: DedupStageOptions = { maxSize: 10_000 },
 ): DedupStage {
-  if (opts.maxSize <= 0) {
-    throw new RangeError('maxSize must be > 0');
+  if (!Number.isInteger(opts.maxSize) || opts.maxSize <= 0) {
+    throw new RangeError('maxSize must be a positive integer');
   }
 
   const seen = new Map<string, true>();
@@ -425,14 +425,14 @@ export function createExtractionStage(
 ): ExtractionStage {
   const { storage, concurrency, queueDepth, timeoutMs } = opts;
 
-  if (concurrency <= 0) {
-    throw new RangeError('concurrency must be > 0');
+  if (!Number.isInteger(concurrency) || concurrency <= 0) {
+    throw new RangeError('concurrency must be a positive integer');
   }
-  if (queueDepth < 1) {
-    throw new RangeError('queueDepth must be >= 1');
+  if (!Number.isInteger(queueDepth) || queueDepth < 1) {
+    throw new RangeError('queueDepth must be a positive integer');
   }
-  if (timeoutMs <= 0) {
-    throw new RangeError('timeoutMs must be > 0');
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new RangeError('timeoutMs must be a positive integer');
   }
 
   let active = 0;
