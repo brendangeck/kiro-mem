@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This document derives functional and non-functional requirements from [design.md](./design.md). It defines the v1 data foundation for kiro-mem: the canonical `Event` wire schema, the `MemoryRecord` storage shape, the pluggable `StorageBackend` interface, and the SQLite + FTS5 implementation of that interface.
+This document derives functional and non-functional requirements from [design.md](./design.md). It defines the v1 data foundation for kiro-learn: the canonical `Event` wire schema, the `MemoryRecord` storage shape, the pluggable `StorageBackend` interface, and the SQLite + FTS5 implementation of that interface.
 
 These requirements are scoped to the data-layer contract. Downstream specs (collector-receiver, collector-pipeline, collector-enrichment, shim, installer) consume this contract and are out of scope.
 
@@ -26,7 +26,7 @@ As an enrichment author, I want `searchMemoryRecords({ namespace, ... })` to ret
 
 ### Story 5: Installer authors want self-managing migrations
 
-As an installer author, I want the storage layer to apply its own DDL migrations automatically on startup, so that `kiro-mem init` and subsequent upgrades don't require a separate migration step.
+As an installer author, I want the storage layer to apply its own DDL migrations automatically on startup, so that `kiro-learn init` and subsequent upgrades don't require a separate migration step.
 
 ### Story 6: Future AgentCore migrators want field-level compatibility
 
@@ -46,7 +46,7 @@ As a future engineer migrating to Bedrock AgentCore Memory, I want every Event f
 
 1.4 WHEN the project is built, THE types module SHALL export an `EventSource` type with fields `surface: 'kiro-cli' | 'kiro-ide'`, `version: string`, `client_id: string`.
 
-1.5 WHEN a downstream module imports from `kiro-mem` (the package's main entry), THE module SHALL see `KiroMemEvent`, `EventKind`, `EventBody`, `EventSource`, `MemoryRecord`, and `StorageBackend` re-exported.
+1.5 WHEN a downstream module imports from `kiro-learn` (the package's main entry), THE module SHALL see `KiroMemEvent`, `EventKind`, `EventBody`, `EventSource`, `MemoryRecord`, and `StorageBackend` re-exported.
 
 ### Requirement 2: Event Zod validator
 
@@ -188,7 +188,7 @@ As a future engineer migrating to Bedrock AgentCore Memory, I want every Event f
 
 12.3 WHEN an Event body is larger than 1 MiB (serialized), THE validator SHALL reject it at the boundary rather than allowing the storage layer to handle an oversized write.
 
-12.4 WHEN the SQLite file is created, THE directory `~/.kiro-mem/` SHALL be writable only by the owning user (mode `0700`). Enforcement is the installer's responsibility, but storage SHALL NOT widen permissions.
+12.4 WHEN the SQLite file is created, THE directory `~/.kiro-learn/` SHALL be writable only by the owning user (mode `0700`). Enforcement is the installer's responsibility, but storage SHALL NOT widen permissions.
 
 ### Requirement 13: Dependencies and toolchain
 
@@ -226,7 +226,7 @@ The following are **not** in this spec and are not tested by the property suite 
 - `kiro-cli` integration for LLM extraction
 - Enrichment assembly and latency-budget logic
 - Shim behavior (local spool, event building from cwd)
-- Installer (`kiro-mem init`, daemon lifecycle, PID file, `~/.kiro-mem/` bootstrap)
+- Installer (`kiro-learn init`, daemon lifecycle, PID file, `~/.kiro-learn/` bootstrap)
 - Embeddings, semantic search, hybrid retrieval (v2+)
 - pgvector and AgentCore Memory adapters (v4)
 

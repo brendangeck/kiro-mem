@@ -146,7 +146,7 @@ All tasks should be executed against the constraints in [requirements.md](./requ
     - _Requirements: 12.2_
 
 - [x] 7. Integration and smoke tests
-  - [x] 7.1 Write an integration test that uses `os.tmpdir()` + a unique subdir to simulate the `~/.kiro-mem/` layout
+  - [x] 7.1 Write an integration test that uses `os.tmpdir()` + a unique subdir to simulate the `~/.kiro-learn/` layout
     - Open storage, run 100 sequential `putEvent` + `putMemoryRecord`, search, close.
     - Reopen same DB, verify data persists.
     - _Requirements: 5.1–5.4, 5.5, 11.1, N4_

@@ -1,5 +1,5 @@
 /**
- * Fast-check arbitraries for the kiro-mem wire contract.
+ * Fast-check arbitraries for the kiro-learn wire contract.
  *
  * These generators produce values that satisfy the Zod schemas in
  * `src/types/schemas.ts`. They are used by property-based tests to exercise

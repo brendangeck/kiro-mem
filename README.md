@@ -1,8 +1,8 @@
-# kiro-mem
+# kiro-learn
 
-Persistent memory for Kiro agent sessions on AWS.
+Continuous learning for Kiro agent sessions on AWS.
 
-kiro-mem seamlessly preserves context across Kiro sessions by passively capturing
+kiro-learn seamlessly preserves context across Kiro sessions by passively capturing
 tool-use events, extracting them into long-term memory records, and injecting the
 relevant prior context into future sessions. The agent maintains continuity of
 knowledge about your projects across sessions, even after the session ends or
