@@ -27,5 +27,21 @@ yarn-error.log*
 *.swp
 *.swo
 
+# Kiro IDE — workspace .kiro/ is version-controlled (specs, steering, hooks).
+# Only ignore the local settings directory which contains user-specific config
+# like MCP server connections. Global user-level config lives at ~/.kiro/ and
+# is outside the repo.
+#
+# References:
+#   Specs:    https://kiro.dev/docs/specs/best-practices/#how-do-i-share-specs-with-my-team
+#             "Specs are designed to be version-controlled [...] Store specs
+#              directly in your project repository alongside the code."
+#   Steering: https://kiro.dev/docs/steering/#workspace-steering
+#             "Workspace steering files reside in your workspace root folder
+#              under .kiro/steering/"
+#   Steering best practices: https://kiro.dev/docs/steering/#best-practices
+#             "Treat steering changes like code changes - require reviews"
+.kiro/settings/
+
 # kiro-mem local state (if tests/dev ever write here)
 .kiro-mem/
