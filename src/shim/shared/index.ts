@@ -214,7 +214,14 @@ export interface EventBuildParams {
 export function buildEvent(params: EventBuildParams): KiroMemEvent {
   const resolvedCwd = realpathSync(params.cwd);
   const projectId = createHash('sha256').update(resolvedCwd).digest('hex');
-  const actorId = userInfo().username;
+
+  let actorId: string;
+  try {
+    actorId = userInfo().username;
+  } catch {
+    actorId = process.env['USER'] ?? process.env['USERNAME'] ?? 'unknown';
+  }
+
   const namespace = `/actor/${actorId}/project/${projectId}/`;
 
   const event: KiroMemEvent = {
