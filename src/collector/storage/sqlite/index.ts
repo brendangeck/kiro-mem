@@ -47,7 +47,7 @@ import type {
   StorageBackend,
 } from '../../../types/index.js';
 
-import { sanitizeForFts5 } from './fts5.js';
+import { escapeLikePattern, sanitizeForFts5 } from './fts5.js';
 import { MIGRATIONS, runMigrations } from './migrations/index.js';
 import {
   prepareStatements,
@@ -221,7 +221,8 @@ export function openSqliteStorage(opts: SqliteStorageOptions): StorageBackend {
       // risk papering over a real failure; we already rebind to a
       // different statement, so any underlying issue that also breaks
       // LIKE will surface from the fallback `.all(...)` below.
-      const pattern = `%${query}%`;
+      const escaped = escapeLikePattern(query);
+      const pattern = `%${escaped}%`;
       rows = stmts.selectMemoryRecordsLike.all(namespace, pattern, pattern, limit);
     }
 

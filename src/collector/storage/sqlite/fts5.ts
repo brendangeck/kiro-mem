@@ -41,3 +41,24 @@
 export function sanitizeForFts5(query: string): string {
   return `"${query.replace(/"/g, '""')}"`;
 }
+
+/**
+ * Escape LIKE-pattern metacharacters (`\`, `%`, `_`) so a user-supplied
+ * query is matched as a literal substring rather than a wildcard pattern.
+ *
+ * The escape character is `\`, which must be declared in the SQL via
+ * `ESCAPE '\'` for the escapes to be honoured by SQLite. The companion
+ * prepared statement in `statements.ts` (`selectMemoryRecordsLike`)
+ * includes that clause.
+ *
+ * Examples:
+ *   escapeLikePattern('100%')    → '100\\%'
+ *   escapeLikePattern('a_b')     → 'a\\_b'
+ *   escapeLikePattern('c\\d')    → 'c\\\\d'
+ *   escapeLikePattern('normal')  → 'normal'
+ *
+ * @see Requirements 8.5, 12.2
+ */
+export function escapeLikePattern(query: string): string {
+  return query.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}

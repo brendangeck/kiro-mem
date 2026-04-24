@@ -11,7 +11,7 @@ All tasks should be executed against the constraints in [requirements.md](./requ
   - Verify `npm run typecheck` still passes after the dependency install.
   - _Requirements: 13.1, 13.2, 13.3_
 
-- [ ] 2. Define canonical types and Zod validators in `src/types/`
+- [x] 2. Define canonical types and Zod validators in `src/types/`
   - [x] 2.1 Replace the hand-written interfaces in `src/types/index.ts` with Zod-schema-derived types.
     - Create `src/types/schemas.ts` with `EventSchema`, `EventBodySchema`, `EventSourceSchema`, `MemoryRecordSchema` and the regex constants `ULID_RE`, `RECORD_ID_RE`, `NAMESPACE_RE`, `CONTENT_HASH_RE` per [design.md § Zod Schemas](./design.md#zod-schemas).
     - Re-export `type KiroMemEvent = z.infer<typeof EventSchema>` and `type MemoryRecord = z.infer<typeof MemoryRecordSchema>` from `src/types/index.ts` to keep the public import path unchanged.
@@ -42,7 +42,7 @@ All tasks should be executed against the constraints in [requirements.md](./requ
     - title at 0, 1, 200, 201 chars. summary at 0, 1, 4000, 4001 chars.
     - _Requirements: 3.5_
 
-- [ ] 3. Define the `StorageBackend` interface in `src/collector/storage/`
+- [x] 3. Define the `StorageBackend` interface in `src/collector/storage/`
   - [x] 3.1 Expand `src/collector/storage/index.ts`
     - Re-export `StorageBackend` from `src/types/index.ts` (preserving current surface).
     - Add a `SearchParams` type (`{ namespace: string; query: string; limit: number }`) if not already in types, and re-export it.
@@ -52,7 +52,7 @@ All tasks should be executed against the constraints in [requirements.md](./requ
     - Use a dummy class that `implements StorageBackend` to force the structural check.
     - _Requirements: 4.1–4.6, 11.3_
 
-- [ ] 4. Build the migration runner in `src/collector/storage/sqlite/migrations/`
+- [x] 4. Build the migration runner in `src/collector/storage/sqlite/migrations/`
   - [x] 4.1 Create `src/collector/storage/sqlite/migrations/types.ts`
     - Export `Migration` interface (`{ version: number; name: string; up: (db: Database) => void }`).
     - Export `MigrationDriftError` class extending `Error`.
@@ -79,7 +79,7 @@ All tasks should be executed against the constraints in [requirements.md](./requ
     - For any prefix of the canonical migration list, running `runMigrations` twice produces an identical snapshot of `sqlite_schema` and `_migrations`.
     - _Requirements: 5.5, 9.5, Correctness Property P6_
 
-- [ ] 5. Implement the SQLite backend in `src/collector/storage/sqlite/`
+- [x] 5. Implement the SQLite backend in `src/collector/storage/sqlite/`
   - [x] 5.1 Create `src/collector/storage/sqlite/statements.ts`
     - Prepared statements for: insert event, select event by id, insert memory record, insert into FTS, select memory records with FTS MATCH + namespace prefix, LIKE-fallback query.
     - Statements are prepared lazily on first use per `Database` instance.
@@ -124,7 +124,7 @@ All tasks should be executed against the constraints in [requirements.md](./requ
     - Write records, close, reopen same path, read records back, confirm migrations do not re-run.
     - _Requirements: 5.5, N4_
 
-- [ ] 6. Property-based tests for the SQLite backend
+- [x] 6. Property-based tests for the SQLite backend
   - [x] 6.1 [PBT] Property: round-trip integrity (P1)
     - Arbitrary valid event → `putEvent` → `getEventById` → deep-equals original in every public field.
     - _Requirements: 7.1, Correctness Property P1_
@@ -145,7 +145,7 @@ All tasks should be executed against the constraints in [requirements.md](./requ
     - Then: the sanitized query, when passed to SQLite's `fts MATCH`, does not throw `SqliteError` for any generator output.
     - _Requirements: 12.2_
 
-- [ ] 7. Integration and smoke tests
+- [x] 7. Integration and smoke tests
   - [x] 7.1 Write an integration test that uses `os.tmpdir()` + a unique subdir to simulate the `~/.kiro-mem/` layout
     - Open storage, run 100 sequential `putEvent` + `putMemoryRecord`, search, close.
     - Reopen same DB, verify data persists.
@@ -154,7 +154,7 @@ All tasks should be executed against the constraints in [requirements.md](./requ
     - _Requirements: 1.5_
   - [x] 7.3 Verify `npm run typecheck && npm run lint && npm run test` is green.
 
-- [ ] 8. Documentation and code guards
+- [x] 8. Documentation and code guards
   - [x] 8.1 Add TSDoc to every public export in `src/types/` and `src/collector/storage/` referencing the corresponding requirement ID.
   - [x] 8.2 Add a README stub at `src/collector/storage/sqlite/README.md` documenting the DB path, the migration policy, and the privacy-scrub boundary contract.
     - Restate: storage does not scrub; pipeline scrubs before calling `putEvent`.

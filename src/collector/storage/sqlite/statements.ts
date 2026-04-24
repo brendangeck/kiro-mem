@@ -421,7 +421,7 @@ export function prepareStatements(db: Database): Statements {
        facts_json, source_event_ids_json, created_at
      FROM memory_records
      WHERE namespace LIKE ? || '%'
-       AND (title LIKE ? OR summary LIKE ?)
+       AND (title LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\')
      ORDER BY created_at DESC
      LIMIT ?`,
   );

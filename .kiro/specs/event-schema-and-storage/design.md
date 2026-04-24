@@ -91,7 +91,7 @@ These are the exact seams other specs must bind to. They are stable for v1.
 
 **Purpose.** Defines the canonical TypeScript types for `Event`, `MemoryRecord`, and `StorageBackend`. These are the contracts every v1 component imports. Re-exported from `src/index.ts` for external consumers.
 
-**Interface.** See [Low-Level Design → Core Interfaces/Types](#core-interfacestypes) for full TypeScript shapes.
+**Interface.** See [Model: KiroMemEvent](#model-kiromemevent) and [Model: MemoryRecord](#model-memoryrecord) for full TypeScript shapes.
 
 **Responsibilities.**
 - Define `KiroMemEvent`, `MemoryRecord`, `StorageBackend` as TypeScript types.
@@ -355,8 +355,9 @@ CREATE TABLE IF NOT EXISTS memory_records (
 CREATE INDEX IF NOT EXISTS idx_memory_records_namespace
   ON memory_records (namespace);
 
--- FTS5 virtual table for memory-record text search. Content-less external content
--- table keeps writes atomic with the primary row via triggers.
+-- FTS5 virtual table for memory-record text search. Regular (non-contentless)
+-- FTS5 table; both the primary row and the FTS row are inserted in the same
+-- transaction. See Notes below.
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_records_fts USING fts5(
   record_id UNINDEXED,
   namespace UNINDEXED,
@@ -394,7 +395,7 @@ export function parseEvent(input: unknown): KiroMemEvent;
 - `input` may be anything. The whole point of this function is to validate.
 
 **Postconditions.**
-- On success, returns a `KiroMemEvent` that satisfies every rule in [Validation rules (Event)](#validation-rules-event).
+- On success, returns a `KiroMemEvent` that satisfies every rule in the [Validation rules (Event)](#event-wire--storage) section above.
 - On failure, throws `ZodError` with a field path and message.
 - Does not mutate `input`.
 - Pure — no I/O, no clock reads, no randomness.
@@ -462,7 +463,7 @@ INPUT: db (open SQLite handle), migrations (sorted ascending by version)
 OUTPUT: void; db has all migrations applied.
 
 BEGIN
-  ASSERT migrations are sorted ascending by version with no gaps
+  ASSERT migrations are strictly ascending by version (gaps are permitted)
   ASSERT every version is distinct
 
   EXECUTE "CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY,
@@ -546,7 +547,7 @@ BEGIN
       ORDER BY fts.rank
       LIMIT ?
       -- params: (escaped_query, namespace, limit)
-  CATCH SqliteError WHERE code = SQLITE_ERROR  // FTS5 rejected malformed query
+  CATCH any error from the MATCH query  // FTS5 malformed query or other SQLite error
     rows ← EXECUTE:
       SELECT ...
       FROM memory_records mr
@@ -827,7 +828,7 @@ v1 scale target: a single developer, one Kiro session at a time, tens of events 
 
 - **Write path.** `putEvent` is a single prepared-statement `INSERT OR IGNORE`. No fsync-per-insert thrash; `better-sqlite3` defaults are fine.
 - **FTS5 index.** `porter + unicode61` is proven in open-source projects at corpus sizes three orders of magnitude above ours.
-- **No WAL tuning in v1.** `better-sqlite3` defaults to WAL on first write; we accept that. If we hit concurrency issues with the enrichment read path later, we revisit.
+- **No WAL tuning in v1.** `better-sqlite3` uses SQLite's default journal mode (DELETE/rollback journal) unless WAL is explicitly enabled via `db.pragma('journal_mode = WAL')`. The codebase currently does not set that pragma, so the storage backend operates in DELETE mode. If we hit concurrency issues with the enrichment read path later, we enable WAL and revisit.
 - **Connection model.** One long-lived `Database` handle per process. `better-sqlite3` is synchronous; the `Promise.resolve` wrapping is a cost of interface compatibility, not of runtime.
 
 ## Security Considerations
