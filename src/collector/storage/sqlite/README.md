@@ -12,7 +12,7 @@ and [AGENTS.md](../../../../AGENTS.md) for the kiro-mem architecture.
 The backend opens a single SQLite file at the path supplied to
 `openSqliteStorage({ dbPath })`. The installer writes it to:
 
-```
+```text
 ~/.kiro-mem/kiro-mem.db
 ```
 

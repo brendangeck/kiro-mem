@@ -101,22 +101,25 @@ export function runMigrations(db: Database, migrations: readonly Migration[]): v
   );
   const applied = selectApplied.all();
 
-  // 3a. Drift check. An applied version whose name disagrees with the
-  //     in-code migration of the same version — or that has no in-code
-  //     counterpart at all — indicates migrations have been renamed,
-  //     reordered, or truncated after being applied. The runner refuses
-  //     to paper over either situation.
-  const byVersion = new Map<number, Migration>(migrations.map((m) => [m.version, m]));
-  for (const row of applied) {
-    const inCode = byVersion.get(row.version);
-    if (inCode === undefined) {
+  // 3a. Drift check. The applied rows must form a contiguous prefix of
+  //     the in-code migrations array. This catches:
+  //       - name mismatches (migration renamed after being applied)
+  //       - version mismatches (migrations reordered)
+  //       - gaps (e.g. DB has [1,3] but code has [1,2,3] — version 2
+  //         was somehow skipped and must not remain skipped)
+  //       - applied versions with no in-code counterpart (code truncated)
+  //     The runner refuses to proceed in any of these cases.
+  if (applied.length > migrations.length) {
+    throw new MigrationDriftError(
+      `migration drift: DB has ${String(applied.length)} applied migrations but code only has ${String(migrations.length)}`,
+    );
+  }
+  for (let i = 0; i < applied.length; i++) {
+    const row = applied[i]!;
+    const inCode = migrations[i]!;
+    if (row.version !== inCode.version || row.name !== inCode.name) {
       throw new MigrationDriftError(
-        `migration drift: DB has version ${String(row.version)} (${row.name}), code has no migration with that version`,
-      );
-    }
-    if (inCode.name !== row.name) {
-      throw new MigrationDriftError(
-        `migration drift: DB has version ${String(row.version)} (${row.name}), code has version ${String(inCode.version)} (${inCode.name})`,
+        `migration drift at position ${String(i)}: DB has (${String(row.version)}, ${row.name}), code has (${String(inCode.version)}, ${inCode.name})`,
       );
     }
   }
