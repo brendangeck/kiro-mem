@@ -46,11 +46,12 @@ jobs:
           # semantic-release needs the complete commit graph + tags to
           # compute the next version from the commit range.
           fetch-depth: 0
-          # Use the GH_TOKEN PAT so the chore(release) commit push
-          # authenticates with sufficient permissions to write to main
-          # and trigger downstream workflows.
-          token: ${{ secrets.GH_TOKEN }}
-          persist-credentials: true
+          # Do NOT persist credentials from checkout. The GH_TOKEN PAT
+          # is only needed by the Release step (to push the chore(release)
+          # commit and tag). Keeping persist-credentials: false avoids
+          # storing a write-capable token in the runner's git config
+          # during install/test steps where it isn't needed.
+          persist-credentials: false
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -78,6 +79,18 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Configure git credentials for release
+        # Inject the PAT into the git remote URL only at the point where
+        # semantic-release needs push access. This limits the window of
+        # credential exposure to the release step rather than the entire
+        # workflow run.
+        run: |
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Release
         env:
