@@ -157,20 +157,26 @@ export function createSession(cwd: string): string {
 /**
  * Read the session ID from the session file derived from `cwd`.
  *
- * If the file is missing or unreadable, generates a fallback UUID, writes
- * it to the session file, and returns it. This ensures non-spawn hooks
- * always have a usable session ID.
+ * If the file is missing, unreadable, or contains an invalid value
+ * (empty or non-UUID), generates a fallback UUID, writes it to the
+ * session file, and returns it. This ensures non-spawn hooks always
+ * have a usable session ID.
  *
  * @see Requirements 2.3, 2.4
  */
 export function readSession(cwd: string): string {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   try {
-    return readFileSync(sessionFilePath(cwd), 'utf8').trim();
+    const value = readFileSync(sessionFilePath(cwd), 'utf8').trim();
+    if (value !== '' && UUID_RE.test(value)) {
+      return value;
+    }
   } catch {
-    const fallback = randomUUID();
-    writeFileSync(sessionFilePath(cwd), fallback, 'utf8');
-    return fallback;
+    // File missing or unreadable — fall through to regeneration.
   }
+  const fallback = randomUUID();
+  writeFileSync(sessionFilePath(cwd), fallback, 'utf8');
+  return fallback;
 }
 
 // ── Event building ──────────────────────────────────────────────────────
@@ -283,20 +289,33 @@ export function truncateBody(
 
     case 'message': {
       const turns = structuredClone(body.turns);
-      const lastTurn = turns[turns.length - 1]!;
-      while (
-        Buffer.byteLength(
-          JSON.stringify({ type: 'message' as const, turns }),
-          'utf8',
-        ) > maxBytes
-      ) {
-        const trimmed = lastTurn.content.substring(
-          0,
-          Math.floor(lastTurn.content.length * 0.9),
-        );
-        if (trimmed.length === lastTurn.content.length) break; // can't trim further
-        lastTurn.content = trimmed;
+      // Trim turns from the end until under budget. Start with the last
+      // turn's content; if that's exhausted, move to earlier turns.
+      for (let t = turns.length - 1; t >= 0; t--) {
+        const turn = turns[t]!;
+        while (
+          Buffer.byteLength(
+            JSON.stringify({ type: 'message' as const, turns }),
+            'utf8',
+          ) > maxBytes
+        ) {
+          const trimmed = turn.content.substring(
+            0,
+            Math.floor(turn.content.length * 0.9),
+          );
+          if (trimmed.length === turn.content.length) break; // can't trim this turn further
+          turn.content = trimmed;
+        }
+        if (
+          Buffer.byteLength(
+            JSON.stringify({ type: 'message' as const, turns }),
+            'utf8',
+          ) <= maxBytes
+        ) {
+          break; // under budget
+        }
       }
+      const lastTurn = turns[turns.length - 1]!;
       lastTurn.content = lastTurn.content + TRUNCATION_MARKER;
       return { type: 'message', turns };
     }

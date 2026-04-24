@@ -78,6 +78,37 @@ describe('Property 4: Body size bound', () => {
     );
   });
 
+  it('truncateBody output size ≤ maxBytes + marker for message bodies', () => {
+    /**
+     * **Validates: Requirements 10.1, 10.2**
+     *
+     * For any message body with large turn content and any maxBytes value
+     * above the structural envelope overhead, the truncated result
+     * serialized size never exceeds maxBytes + marker. The minimum
+     * maxBytes is set to 300 to accommodate the JSON envelope of up to
+     * 5 turns (roles, array brackets, etc.).
+     */
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            role: fc.constantFrom('user', 'assistant'),
+            content: fc.string({ minLength: 100, maxLength: 10_000 }),
+          }),
+          { minLength: 1, maxLength: 5 },
+        ),
+        fc.integer({ min: 300, max: 10_000 }),
+        (turns, maxBytes) => {
+          const body = { type: 'message' as const, turns };
+          const result = truncateBody(body, maxBytes);
+          const size = Buffer.byteLength(JSON.stringify(result), 'utf8');
+          expect(size).toBeLessThanOrEqual(maxBytes + MARKER_LEN);
+        },
+      ),
+      { numRuns: 50 },
+    );
+  });
+
   it('truncateBody output size ≤ maxBytes + marker for json bodies with non-string data', () => {
     /**
      * **Validates: Requirements 10.1, 10.4**
