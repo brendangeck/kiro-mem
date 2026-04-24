@@ -1,5 +1,5 @@
 /**
- * Canonical types for kiro-mem.
+ * Canonical types for kiro-learn.
  *
  * The `Event` schema is the one-way-door contract. See AGENTS.md for the
  * architectural narrative and

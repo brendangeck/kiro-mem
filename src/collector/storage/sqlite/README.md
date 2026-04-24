@@ -5,7 +5,7 @@ local store built on `better-sqlite3` and FTS5.
 
 See the full design in
 [`.kiro/specs/event-schema-and-storage/design.md`](../../../../.kiro/specs/event-schema-and-storage/design.md)
-and [AGENTS.md](../../../../AGENTS.md) for the kiro-mem architecture.
+and [AGENTS.md](../../../../AGENTS.md) for the kiro-learn architecture.
 
 ## DB path
 
@@ -13,7 +13,7 @@ The backend opens a single SQLite file at the path supplied to
 `openSqliteStorage({ dbPath })`. The installer writes it to:
 
 ```text
-~/.kiro-mem/kiro-mem.db
+~/.kiro-learn/kiro-learn.db
 ```
 
 No sub-directory layout; WAL/SHM sidecars (when WAL mode is on) sit next to the
@@ -22,7 +22,7 @@ primary file. The backend creates any missing parent directories with
 machine do not require a separate provisioning step.
 
 File-system permissions are the installer's responsibility; storage does not
-widen them. `~/.kiro-mem/` is expected to be mode `0700` (owner-only) per
+widen them. `~/.kiro-learn/` is expected to be mode `0700` (owner-only) per
 Requirement 12.4.
 
 ## Migration policy

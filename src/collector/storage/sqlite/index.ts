@@ -67,7 +67,7 @@ import {
 export interface SqliteStorageOptions {
   /**
    * Absolute path to the SQLite file, e.g.
-   * `~/.kiro-mem/kiro-mem.db`. The backend creates any missing parent
+   * `~/.kiro-learn/kiro-learn.db`. The backend creates any missing parent
    * directories with `mkdirSync(..., { recursive: true })` so first-time
    * opens on a fresh machine work without a separate install step.
    */

@@ -1,5 +1,5 @@
 /**
- * Zod-backed schemas and parsers for the kiro-mem wire contract.
+ * Zod-backed schemas and parsers for the kiro-learn wire contract.
  *
  * These schemas are the runtime source of truth for the `Event` and
  * `MemoryRecord` shapes. The corresponding TypeScript types are derived via

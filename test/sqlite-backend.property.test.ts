@@ -71,8 +71,8 @@ interface Scratch {
  * handle is the caller's to close; see {@link cleanupScratch}.
  */
 function openScratch(): Scratch {
-  const tmpRoot = mkdtempSync(join(tmpdir(), 'kiro-mem-pbt-'));
-  const dbPath = join(tmpRoot, 'kiro-mem.db');
+  const tmpRoot = mkdtempSync(join(tmpdir(), 'kiro-learn-pbt-'));
+  const dbPath = join(tmpRoot, 'kiro-learn.db');
   const storage = openSqliteStorage({ dbPath });
   return { tmpRoot, dbPath, storage };
 }

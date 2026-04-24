@@ -1,12 +1,12 @@
-# kiro-mem
+# kiro-learn
 
-Persistent memory for Kiro agent sessions on AWS. Inspired by and largely based on [claude-mem](https://github.com/thedotmack/claude-mem) by Alex Newman, rebuilt for the Kiro + AWS ecosystem.
+Continuous learning for Kiro agent sessions on AWS. Inspired by and largely based on [claude-mem](https://github.com/thedotmack/claude-mem) by Alex Newman, rebuilt for the Kiro + AWS ecosystem.
 
-kiro-mem seamlessly preserves context across Kiro sessions by passively capturing tool-use events, extracting them into long-term memory records, and injecting the relevant prior context into future sessions. The agent maintains continuity of knowledge about your projects across sessions, even after the session ends or reconnects.
+kiro-learn seamlessly preserves context across Kiro sessions by passively capturing tool-use events, extracting them into long-term memory records, and injecting the relevant prior context into future sessions. The agent maintains continuity of knowledge about your projects across sessions, even after the session ends or reconnects.
 
 ## North Star
 
-A local-first, AWS-native memory layer for Kiro that follows the same conceptual model as [Amazon Bedrock AgentCore Memory](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html). One collector, one event schema, plug-in storage. Zero external API keys — all AI work goes through `kiro-cli` (Amazon Bedrock). Designed so the same system that runs on a developer's laptop can later run as a shared team service on AWS without schema changes — and so that a future migration to AgentCore Memory itself is a field-mapping exercise, not a rewrite.
+A local-first, AWS-native continuous learning layer for Kiro that follows the same conceptual model as [Amazon Bedrock AgentCore Memory](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html). One collector, one event schema, plug-in storage. Zero external API keys — all AI work goes through `kiro-cli` (Amazon Bedrock). Designed so the same system that runs on a developer's laptop can later run as a shared team service on AWS without schema changes — and so that a future migration to AgentCore Memory itself is a field-mapping exercise, not a rewrite.
 
 ## Architecture
 
@@ -57,7 +57,7 @@ A local-first, AWS-native memory layer for Kiro that follows the same conceptual
 
 ## Vocabulary
 
-kiro-mem uses [AgentCore Memory's vocabulary](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-terminology.html) directly. Keeping this aligned means a future migration to AgentCore Memory is a field-mapping exercise, not a rewrite.
+kiro-learn uses [AgentCore Memory's vocabulary](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-terminology.html) directly. Keeping this aligned means a future migration to AgentCore Memory is a field-mapping exercise, not a rewrite.
 
 | Term                | Meaning                                                                                                                                                                                  |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -117,7 +117,7 @@ This is a [one-way-door](https://aws.amazon.com/blogs/enterprise-strategy/making
 
 **Project identity — how `namespace` is resolved:**
 
-The shim derives `project_id` from its own `cwd` at event-emission time. Kiro invokes hooks with the working directory set to the agent's project root — if the agent came from `<workspace>/.kiro/agents/kiro-mem.json`, cwd is that workspace; if from the global `~/.kiro/agents/kiro-mem.json` while the user ran `kiro-cli chat` in a workspace, cwd is still that workspace. The shim treats cwd as ground truth:
+The shim derives `project_id` from its own `cwd` at event-emission time. Kiro invokes hooks with the working directory set to the agent's project root — if the agent came from `<workspace>/.kiro/agents/kiro-learn.json`, cwd is that workspace; if from the global `~/.kiro/agents/kiro-learn.json` while the user ran `kiro-cli chat` in a workspace, cwd is still that workspace. The shim treats cwd as ground truth:
 
 ```
 project_id = sha256(realpath(process.cwd()))
@@ -154,13 +154,13 @@ No tree walk, no `.kiro/` discovery, no registration file. Project identity is a
 
 ## Relationship to kiro-cli knowledge
 
-`kiro-cli knowledge` and `kiro-mem` are independent systems. They are **not interoperable, not shared, and do not communicate**. They solve different problems.
+`kiro-cli knowledge` and `kiro-learn` are independent systems. They are **not interoperable, not shared, and do not communicate**. They solve different problems.
 
 **`kiro-cli knowledge`** is a user-curated, document-oriented knowledge base. You explicitly add files or directories to it, and the agent can query it mid-turn via the `knowledge` tool when the model decides the query is relevant. It is long-term reference material, scoped to a single Kiro agent, stored per-agent under the OS data directory (e.g., `~/Library/Application Support/kiro-cli/knowledge_bases/<agent_name>_<hash>/`), indexed with an HNSW vector graph over document chunks.
 
-**`kiro-mem`** is a different primitive: passive, session-scoped memory of agent interactions. It captures events automatically when Kiro lifecycle hooks fire (prompt submit, tool use, session stop), extracts structured memory records continuously in the background, and injects relevant context into the next prompt _before the model runs_ — no tool call required. Its scope is the project (cwd at hook-execution time), not the agent. Storage lives under `~/.kiro-mem/`, separate from and unaware of the knowledge base storage.
+**`kiro-learn`** is a different primitive: passive, session-scoped memory of agent interactions. It captures events automatically when Kiro lifecycle hooks fire (prompt submit, tool use, session stop), extracts structured memory records continuously in the background, and injects relevant context into the next prompt _before the model runs_ — no tool call required. Its scope is the project (cwd at hook-execution time), not the agent. Storage lives under `~/.kiro-learn/`, separate from and unaware of the knowledge base storage.
 
-|               | kiro-cli knowledge                                        | kiro-mem                                                   |
+|               | kiro-cli knowledge                                        | kiro-learn                                                   |
 | ------------- | --------------------------------------------------------- | ---------------------------------------------------------- |
 | **Unit**      | Document                                                  | Event / memory record                                      |
 | **Ingest**    | User-triggered file add                                   | Passive hook capture                                       |
@@ -168,45 +168,45 @@ No tree walk, no `.kiro/` discovery, no registration file. Project identity is a
 | **Scope**     | Per-agent KB directory                                    | Per-project namespace (cwd-derived)                        |
 | **Retrieval** | Agent calls tool mid-turn                                 | Synchronous enrichment at prompt-time, injected as context |
 | **Use case**  | "Search this codebase I indexed"                          | "Remember what happened in past sessions on this project"  |
-| **Storage**   | `~/Library/Application Support/kiro-cli/knowledge_bases/` | `~/.kiro-mem/`                                             |
+| **Storage**   | `~/Library/Application Support/kiro-cli/knowledge_bases/` | `~/.kiro-learn/`                                             |
 
 **Explicit non-interop contract:**
 
-- kiro-mem does **not** read from, write to, or call into `kiro-cli knowledge`.
-- `kiro-cli knowledge` has no awareness of kiro-mem events or memory records.
+- kiro-learn does **not** read from, write to, or call into `kiro-cli knowledge`.
+- `kiro-cli knowledge` has no awareness of kiro-learn events or memory records.
 - The two systems do not share storage, indexes, embeddings, or APIs.
-- Events captured by kiro-mem are never indexed into a knowledge base. Files indexed into a knowledge base are never ingested as kiro-mem events.
+- Events captured by kiro-learn are never indexed into a knowledge base. Files indexed into a knowledge base are never ingested as kiro-learn events.
 - A user who uses both systems simultaneously will see them operate completely independently, each unaware of the other.
 
-This is deliberate: the two primitives address complementary problems, and attempting to unify them would compromise both. If Kiro ever adds a native equivalent of kiro-mem, that becomes the migration target — not the knowledge tool.
+This is deliberate: the two primitives address complementary problems, and attempting to unify them would compromise both. If Kiro ever adds a native equivalent of kiro-learn, that becomes the migration target — not the knowledge tool.
 
 ## Distribution
 
-kiro-mem ships as an npm package that bootstraps a local install under `~/.kiro-mem/`. The npm package is the delivery mechanism; the installed directory is the runtime.
+kiro-learn ships as an npm package that bootstraps a local install under `~/.kiro-learn/`. The npm package is the delivery mechanism; the installed directory is the runtime.
 
 ### Install flow
 
 ```bash
-npx kiro-mem@latest init
+npx kiro-learn@latest init
 ```
 
 The `init` command:
 
-1. Creates `~/.kiro-mem/` if missing.
-2. Copies the package's compiled `lib/` (shim, collector, installer, types) into `~/.kiro-mem/lib/`.
-3. Installs runtime dependencies (`better-sqlite3`, etc.) into `~/.kiro-mem/node_modules/` via a nested production install.
-4. Writes `bin/` wrapper scripts (`shim`, `collector`, `kiro-mem`) that are shebang-executable Node entrypoints.
-5. Writes the global CLI agent at `~/.kiro/agents/kiro-mem.json`, with hook commands pointing at absolute paths under `~/.kiro-mem/bin/`.
-6. Starts the collector daemon and writes its PID to `~/.kiro-mem/collector.pid`.
+1. Creates `~/.kiro-learn/` if missing.
+2. Copies the package's compiled `lib/` (shim, collector, installer, types) into `~/.kiro-learn/lib/`.
+3. Installs runtime dependencies (`better-sqlite3`, etc.) into `~/.kiro-learn/node_modules/` via a nested production install.
+4. Writes `bin/` wrapper scripts (`shim`, `collector`, `kiro-learn`) that are shebang-executable Node entrypoints.
+5. Writes the global CLI agent at `~/.kiro/agents/kiro-learn.json`, with hook commands pointing at absolute paths under `~/.kiro-learn/bin/`.
+6. Starts the collector daemon and writes its PID to `~/.kiro-learn/collector.pid`.
 
-Once installed, `~/.kiro-mem/` is runtime-independent of the npm package. The npx cache is disposable; the installed copy is the source of truth for hook invocations.
+Once installed, `~/.kiro-learn/` is runtime-independent of the npm package. The npx cache is disposable; the installed copy is the source of truth for hook invocations.
 
 ### Installed layout
 
 ```
-~/.kiro-mem/
+~/.kiro-learn/
 ├── bin/
-│   ├── kiro-mem            # CLI entry: `kiro-mem status|start|stop|uninstall`
+│   ├── kiro-learn            # CLI entry: `kiro-learn status|start|stop|uninstall`
 │   ├── shim                # hook entry: invoked on every Kiro hook fire
 │   └── collector           # daemon entry: the long-running local process
 ├── lib/                    # compiled payload (our dist/ copied here)
@@ -215,7 +215,7 @@ Once installed, `~/.kiro-mem/` is runtime-independent of the npm package. The np
 │   ├── installer/
 │   └── types/
 ├── node_modules/           # runtime deps, installed once at init
-├── kiro-mem.db             # SQLite store (events + memory records + FTS5 index)
+├── kiro-learn.db             # SQLite store (events + memory records + FTS5 index)
 ├── settings.json           # user-editable config
 ├── collector.pid           # PID of the running daemon
 └── logs/
@@ -223,39 +223,39 @@ Once installed, `~/.kiro-mem/` is runtime-independent of the npm package. The np
     └── shim-YYYY-MM-DD.log
 
 ~/.kiro/agents/
-└── kiro-mem.json           # global CLI agent; hook commands → ~/.kiro-mem/bin/shim
+└── kiro-learn.json           # global CLI agent; hook commands → ~/.kiro-learn/bin/shim
 ```
 
 ### Upgrade flow
 
 ```bash
-npx kiro-mem@latest init
+npx kiro-learn@latest init
 ```
 
 Same command as initial install. When a prior install is detected, the installer:
 
 1. Stops the running daemon (if any) via the PID file.
-2. Replaces `~/.kiro-mem/lib/` and `~/.kiro-mem/node_modules/` with the new payload.
-3. Preserves `kiro-mem.db`, `settings.json`, and `logs/`.
+2. Replaces `~/.kiro-learn/lib/` and `~/.kiro-learn/node_modules/` with the new payload.
+3. Preserves `kiro-learn.db`, `settings.json`, and `logs/`.
 4. Rewrites `bin/` wrappers (usually unchanged).
 5. Restarts the daemon.
 
-Users who want to pin a version use `npx kiro-mem@0.2 init`. Default is latest.
+Users who want to pin a version use `npx kiro-learn@0.2 init`. Default is latest.
 
 ### Uninstall flow
 
 ```bash
-kiro-mem uninstall
+kiro-learn uninstall
 ```
 
-Reverses everything init did: stops the daemon, removes `~/.kiro-mem/`, removes `~/.kiro/agents/kiro-mem.json`. `settings.json` and database are deleted unless the user passes `--keep-data`.
+Reverses everything init did: stops the daemon, removes `~/.kiro-learn/`, removes `~/.kiro/agents/kiro-learn.json`. `settings.json` and database are deleted unless the user passes `--keep-data`.
 
 ### Why this shape
 
-- **Fast hook invocation.** Hooks fire on every user prompt and tool use. They must be millisecond-latency. Resolving through npm/npx on each invocation is too slow; a fixed absolute path under `~/.kiro-mem/bin/` is not.
+- **Fast hook invocation.** Hooks fire on every user prompt and tool use. They must be millisecond-latency. Resolving through npm/npx on each invocation is too slow; a fixed absolute path under `~/.kiro-learn/bin/` is not.
 - **No global pollution.** The npm package doesn't need to be installed globally or remain in the npm cache. `npx` is purely the bootstrap.
 - **Clean upgrade semantics.** Re-running `init` is idempotent and preserves user data. No version drift between the package, the installed payload, and the running daemon.
-- **Transferable.** The entire installed footprint is one directory. Auditing, backing up, or moving kiro-mem is a matter of inspecting or copying `~/.kiro-mem/`.
+- **Transferable.** The entire installed footprint is one directory. Auditing, backing up, or moving kiro-learn is a matter of inspecting or copying `~/.kiro-learn/`.
 
 ### v1 constraints
 
@@ -276,7 +276,7 @@ Smallest thing that makes the vision real. Happy-path only.
 - **Storage:** SQLite + FTS5. No embeddings yet.
 - **Retrieval:** lexical search (FTS5) on memory records, scoped by namespace.
 - **Enrichment:** synchronous context injection on `prompt` events.
-- **Installer:** `kiro-mem init` installs once per machine — deploys scripts, writes the global agent at `~/.kiro/agents/kiro-mem.json`, starts the daemon. No per-project setup required. Uninstall inverts cleanly.
+- **Installer:** `kiro-learn init` installs once per machine — deploys scripts, writes the global agent at `~/.kiro/agents/kiro-learn.json`, starts the daemon. No per-project setup required. Uninstall inverts cleanly.
 
 **Explicitly not in v1:**
 
@@ -303,7 +303,7 @@ Smallest thing that makes the vision real. Happy-path only.
 ### v4 — Cloud path
 
 - Aurora + pgvector as a storage exporter (drop-in, same schema)
-- **Bedrock AgentCore Memory** as an optional managed backend — the migration is essentially a field-mapping, since kiro-mem's v1 wire schema is a subset of AgentCore's Event model
+- **Bedrock AgentCore Memory** as an optional managed backend — the migration is essentially a field-mapping, since kiro-learn's v1 wire schema is a subset of AgentCore's Event model
 - S3 cold archive for old events
 - IAM-scoped team memory using AgentCore's namespace pattern
 
@@ -329,7 +329,7 @@ Smallest thing that makes the vision real. Happy-path only.
 
 7. **Local-first.** The developer experience is a single-process daemon with no cloud account required. Cloud is a v4+ story. The local schema is wire-compatible with the cloud path when we get there.
 
-8. **Global by default, workspace-local to override.** The v1 install writes one CLI agent at `~/.kiro/agents/kiro-mem.json` so memory works in every Kiro session by default. Users can drop a workspace-local `.kiro/agents/kiro-mem.json` in any project to override behavior — to disable memory capture for that project, adjust hook configuration, or customize the namespace. This follows Kiro's own precedence model: local agents win over global ones with the same name. No per-project install command is required.
+8. **Global by default, workspace-local to override.** The v1 install writes one CLI agent at `~/.kiro/agents/kiro-learn.json` so memory works in every Kiro session by default. Users can drop a workspace-local `.kiro/agents/kiro-learn.json` in any project to override behavior — to disable memory capture for that project, adjust hook configuration, or customize the namespace. This follows Kiro's own precedence model: local agents win over global ones with the same name. No per-project install command is required.
 
 ## Repo Layout (target)
 
@@ -349,14 +349,14 @@ src/
     enrichment/        # synchronous context-assembly endpoint
     query/             # retrieval strategies (FTS5 v1, hybrid v2+)
   mcp/                 # v3: MCP tool wrappers over query
-  installer/           # npx kiro-mem init/start/stop/status/uninstall
+  installer/           # npx kiro-learn init/start/stop/status/uninstall
   viewer/              # v3: React UI
   types/               # shared Event + MemoryRecord schemas, storage interface
 ```
 
 ## Relationship to claude-mem
 
-kiro-mem started as a fork of [claude-mem](https://github.com/thedotmack/claude-mem). The selling point and the core insight — passive tool-use capture + LLM extraction + injected semantic context — come directly from claude-mem. What's different:
+kiro-learn started as a fork of [claude-mem](https://github.com/thedotmack/claude-mem). The selling point and the core insight — passive tool-use capture + LLM extraction + injected semantic context — come directly from claude-mem. What's different:
 
 - Targeted at Kiro + AWS only (not Claude Code or other agent frameworks)
 - Uses `kiro-cli` as the sole extraction backend (no API keys required)

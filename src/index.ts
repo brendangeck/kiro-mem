@@ -1,5 +1,5 @@
 /**
- * Public entry point for kiro-mem.
+ * Public entry point for kiro-learn.
  *
  * For the architecture and north star, see AGENTS.md.
  */

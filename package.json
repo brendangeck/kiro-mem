@@ -1,14 +1,14 @@
 {
-  "name": "kiro-mem",
+  "name": "kiro-learn",
   "version": "0.2.0",
-  "description": "Persistent memory for Kiro agent sessions on AWS. Passive tool-use capture, LLM extraction, and synchronous context injection — inspired by claude-mem, aligned with Bedrock AgentCore Memory.",
+  "description": "Continuous learning for Kiro agent sessions on AWS. Passive tool-use capture, LLM extraction, and synchronous context injection — inspired by claude-mem, aligned with Bedrock AgentCore Memory.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "bin": {
-    "kiro-mem": "dist/installer/bin.js"
+    "kiro-learn": "dist/installer/bin.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -67,6 +67,8 @@
     "aws",
     "bedrock",
     "agent",
+    "learning",
+    "continuous-learning",
     "memory",
     "agentcore"
   ],
@@ -78,11 +80,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/brendangeck/kiro-mem.git"
+    "url": "git+https://github.com/brendangeck/kiro-learn.git"
   },
   "author": "Brendan Geck <bpgeck@gmail.com>",
   "bugs": {
-    "url": "https://github.com/brendangeck/kiro-mem/issues"
+    "url": "https://github.com/brendangeck/kiro-learn/issues"
   },
-  "homepage": "https://github.com/brendangeck/kiro-mem#readme"
+  "homepage": "https://github.com/brendangeck/kiro-learn#readme"
 }

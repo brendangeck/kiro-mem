@@ -2,7 +2,7 @@
 
 ## Overview
 
-This spec defines the data foundation for kiro-mem: the canonical `Event` wire schema, the `MemoryRecord` storage shape, the `StorageBackend` interface that sits between the pipeline and persistence, and the SQLite + FTS5 implementation of that interface for v1. It also defines the migration runner that keeps the on-disk schema in step with the code.
+This spec defines the data foundation for kiro-learn: the canonical `Event` wire schema, the `MemoryRecord` storage shape, the `StorageBackend` interface that sits between the pipeline and persistence, and the SQLite + FTS5 implementation of that interface for v1. It also defines the migration runner that keeps the on-disk schema in step with the code.
 
 The Event schema is a one-way door. v1 must carry every field needed to later absorb semantic-graph extraction, bi-temporal queries, multi-client sources, team/shared memory, and migration to Amazon Bedrock AgentCore Memory without a breaking change. The shape here mirrors AgentCore Memory's Event model exactly (event, memory record, session, actor, namespace, memory strategy) so a future migration becomes a field-mapping exercise, not a rewrite.
 
@@ -20,7 +20,7 @@ graph TD
     Receiver -->|validated Event| Pipeline[Pipeline: dedup + scrub + extract<br/>out of scope]
     Pipeline -->|putEvent / putMemoryRecord| Storage[StorageBackend interface<br/>THIS SPEC]
     Pipeline -->|searchMemoryRecords| Storage
-    Storage -->|SQLite impl| SQLite[(~/.kiro-mem/kiro-mem.db)]
+    Storage -->|SQLite impl| SQLite[(~/.kiro-learn/kiro-learn.db)]
     Storage -.->|v4| PgVector[(pgvector)]
     Storage -.->|v4| AgentCore[(AgentCore Memory)]
 
@@ -137,7 +137,7 @@ export interface SearchParams {
 **Public surface.**
 ```typescript
 export interface SqliteStorageOptions {
-  dbPath: string;              // e.g. ~/.kiro-mem/kiro-mem.db
+  dbPath: string;              // e.g. ~/.kiro-learn/kiro-learn.db
   // Optional advanced knobs live on the options type but have sensible defaults.
   // Not exposed for v1 consumers outside tests.
 }
@@ -156,7 +156,7 @@ export function openSqliteStorage(opts: SqliteStorageOptions): StorageBackend;
 
 **Non-responsibilities.**
 - No business logic. No privacy scrub. No dedup beyond the PK constraint.
-- No backup/encryption. SQLite file is a plain file on the developer's own machine under `~/.kiro-mem/`. The `.gitignore` already excludes `~/.kiro-mem/`. File-system permissions default to the owning user.
+- No backup/encryption. SQLite file is a plain file on the developer's own machine under `~/.kiro-learn/`. The `.gitignore` already excludes `~/.kiro-learn/`. File-system permissions default to the owning user.
 
 ### Component 4: Migration Runner (`src/collector/storage/sqlite/migrations/`)
 
@@ -581,15 +581,15 @@ END FUNCTION
 
 ```typescript
 // 1) Validate an incoming payload (receiver/pipeline boundary).
-import { parseEvent } from 'kiro-mem/types';
+import { parseEvent } from 'kiro-learn/types';
 
 const event = parseEvent(requestBody);   // throws ZodError on bad input
 
 // 2) Open storage (collector bootstrap).
-import { openSqliteStorage } from 'kiro-mem/collector/storage/sqlite';
+import { openSqliteStorage } from 'kiro-learn/collector/storage/sqlite';
 
 const storage = openSqliteStorage({
-  dbPath: path.join(os.homedir(), '.kiro-mem', 'kiro-mem.db'),
+  dbPath: path.join(os.homedir(), '.kiro-learn', 'kiro-learn.db'),
 });
 // Migrations run on open. Ready to use.
 
@@ -833,7 +833,7 @@ v1 scale target: a single developer, one Kiro session at a time, tens of events 
 
 ## Security Considerations
 
-- **Local-first, single-user.** The SQLite file lives under `~/.kiro-mem/` on the developer's own machine. Default POSIX permissions inherit the user's umask (`0700` for the directory, owner-rw for the file). This spec does not add encryption-at-rest; the threat model is "attacker has already read your home directory" which is equivalent to reading your chat logs.
+- **Local-first, single-user.** The SQLite file lives under `~/.kiro-learn/` on the developer's own machine. Default POSIX permissions inherit the user's umask (`0700` for the directory, owner-rw for the file). This spec does not add encryption-at-rest; the threat model is "attacker has already read your home directory" which is equivalent to reading your chat logs.
 - **Privacy contract.** Storage does not scrub `<private>...</private>` spans. The pipeline spec owns that. This spec documents it (see [Handoff contract](#handoff-contract-to-downstream-specs)) and will be re-tested at the pipeline layer.
 - **SQL injection.** Every query uses prepared statements. FTS5 user input is quoted as a phrase; a fallback LIKE path escapes `%` and `_`. No string concatenation into SQL anywhere.
 - **Input validation.** Every Event crossing a trust boundary passes through `parseEvent` (Zod). Aligns with organizational input-validation guidance ([BSC1](https://arcc.example/cnt_u7sfVeParu7OlX)): allowlist-based validation, whole-object shape checks, strict literal enums.

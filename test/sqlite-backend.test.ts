@@ -46,8 +46,8 @@ let dbPath: string;
 let storage: StorageBackend;
 
 beforeEach(() => {
-  tmpRoot = mkdtempSync(join(tmpdir(), 'kiro-mem-test-'));
-  dbPath = join(tmpRoot, 'kiro-mem.db');
+  tmpRoot = mkdtempSync(join(tmpdir(), 'kiro-learn-test-'));
+  dbPath = join(tmpRoot, 'kiro-learn.db');
   storage = openSqliteStorage({ dbPath });
 });
 

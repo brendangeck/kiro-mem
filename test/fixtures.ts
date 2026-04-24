@@ -1,5 +1,5 @@
 /**
- * Shared fixture factories for kiro-mem test suites.
+ * Shared fixture factories for kiro-learn test suites.
  *
  * These helpers produce minimal, valid `KiroMemEvent` / `MemoryRecord`
  * wire shapes that satisfy every Zod validator in `src/types/schemas.ts`.

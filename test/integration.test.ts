@@ -1,9 +1,9 @@
 /**
  * Integration test for the SQLite storage backend.
  *
- * Simulates the real `~/.kiro-mem/` install layout by creating a unique
+ * Simulates the real `~/.kiro-learn/` install layout by creating a unique
  * temp directory (via `mkdtempSync` under `os.tmpdir()`) and placing a
- * SQLite file inside it at `kiro-mem.db` — the same filename the
+ * SQLite file inside it at `kiro-learn.db` — the same filename the
  * installer writes in production (see AGENTS.md § Installed layout).
  *
  * Unlike the unit tests in `sqlite-backend.test.ts` or the property
@@ -76,16 +76,16 @@ function makeRecordId(n: number): string {
 
 /**
  * Scratch state for a single test. `tmpRoot` is a unique directory
- * under `os.tmpdir()` (e.g. `/tmp/kiro-mem-integration-abc123/`) and
- * `dbPath` is `${tmpRoot}/kiro-mem.db`, mirroring the `~/.kiro-mem/`
+ * under `os.tmpdir()` (e.g. `/tmp/kiro-learn-integration-abc123/`) and
+ * `dbPath` is `${tmpRoot}/kiro-learn.db`, mirroring the `~/.kiro-learn/`
  * runtime layout installers produce.
  */
 let tmpRoot: string;
 let dbPath: string;
 
 beforeEach(() => {
-  tmpRoot = mkdtempSync(join(tmpdir(), 'kiro-mem-integration-'));
-  dbPath = join(tmpRoot, 'kiro-mem.db');
+  tmpRoot = mkdtempSync(join(tmpdir(), 'kiro-learn-integration-'));
+  dbPath = join(tmpRoot, 'kiro-learn.db');
 });
 
 afterEach(() => {

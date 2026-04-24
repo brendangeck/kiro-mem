@@ -5,7 +5,7 @@ import type { KiroMemEvent } from '../src/index.js';
  * Smoke test — proves the toolchain (TypeScript + vitest + NodeNext ESM
  * resolution) is wired up. Real tests land alongside implementation.
  */
-describe('kiro-mem skeleton', () => {
+describe('kiro-learn skeleton', () => {
   it('exports the KiroMemEvent type shape', () => {
     const event: KiroMemEvent = {
       event_id: '01JF8ZS4Y0000000000000000',
