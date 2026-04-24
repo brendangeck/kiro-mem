@@ -1,0 +1,89 @@
+name: Release
+
+# Runs semantic-release on every push to `main`. Reads conventional
+# commits since the last release, decides the next version, and:
+#   1. updates package.json + CHANGELOG.md
+#   2. publishes to npm (with provenance attestation)
+#   3. commits the version bump back to main as `chore(release): ...`
+#      with `[skip ci]` so CI does not loop
+#   4. creates a GitHub Release with the generated notes
+#
+# No-ops gracefully when the commit range contains nothing releasable
+# (e.g. only `chore:` / `docs:` commits).
+
+on:
+  push:
+    branches: [main]
+
+# Serialize releases. If two merges land back-to-back, the second waits
+# for the first to finish committing the version bump, then picks up
+# from the new baseline.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: semantic-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # `contents: write` — push the chore(release) commit + tag.
+    # `issues: write` + `pull-requests: write` — post release-comment
+    # annotations on closed PRs and issues mentioned in the release.
+    # `id-token: write` — enables npm provenance (OIDC attestation
+    # linking the published tarball to this workflow run).
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          # semantic-release needs the complete commit graph + tags to
+          # compute the next version from the commit range.
+          fetch-depth: 0
+          # Use the GH_TOKEN PAT so the chore(release) commit push
+          # authenticates with sufficient permissions to write to main
+          # and trigger downstream workflows.
+          token: ${{ secrets.GH_TOKEN }}
+          persist-credentials: true
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Re-verify on the exact commit we're about to release. The CI
+      # workflow already did this on the PR, but doing it again here
+      # guards against anything that slipped in between merge and
+      # release (force-push to main, etc.) and keeps the audit trail
+      # on the release workflow itself.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Opt in to npm provenance; reads OIDC claims from the
+          # workflow run and records them on the published tarball.
+          NPM_CONFIG_PROVENANCE: "true"
+        run: npx semantic-release
