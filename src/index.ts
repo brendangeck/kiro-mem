@@ -11,6 +11,6 @@ export type {
   KiroMemEvent,
   MemoryRecord,
   EventIngestResponse,
-  EnrichmentResult,
+  RetrievalResult,
   StorageBackend,
 } from './types/index.js';

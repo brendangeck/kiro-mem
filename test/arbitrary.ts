@@ -294,3 +294,195 @@ export function arbitraryMemoryRecord(): fc.Arbitrary<MemoryRecord> {
     created_at: isoDateArb(),
   });
 }
+
+// ── Private-span generators (Task 2.6) ─────────────────────────────────
+
+/**
+ * Arbitrary string containing `<private>...</private>` spans.
+ *
+ * Generates three variants:
+ * - **simple**: `<private>secret</private>`
+ * - **nested**: `<private>outer <private>inner</private> more</private>`
+ * - **unclosed**: `<private>secret with no close tag`
+ *
+ * The inner content and surrounding text are arbitrary strings that never
+ * contain the literal `<private>` or `</private>` substrings themselves,
+ * so the injected tags are the only ones present.
+ */
+function privateSpanArb(): fc.Arbitrary<string> {
+  /** Safe content that does not contain private tags. */
+  const safeStr = fc
+    .string({ maxLength: 50 })
+    .map((s) => s.replace(/<\/?private>/g, ''));
+
+  const simple = fc
+    .tuple(safeStr, safeStr, safeStr)
+    .map(([before, secret, after]) => `${before}<private>${secret}</private>${after}`);
+
+  const nested = fc
+    .tuple(safeStr, safeStr, safeStr, safeStr)
+    .map(
+      ([before, outer, inner, after]) =>
+        `${before}<private>${outer}<private>${inner}</private>${outer}</private>${after}`,
+    );
+
+  const unclosed = fc
+    .tuple(safeStr, safeStr)
+    .map(([before, secret]) => `${before}<private>${secret}`);
+
+  return fc.oneof(simple, nested, unclosed);
+}
+
+/**
+ * Arbitrary text body with `<private>` spans injected into `content`.
+ */
+function textBodyWithPrivateArb(): fc.Arbitrary<{ type: 'text'; content: string }> {
+  return fc.record({
+    type: fc.constant('text' as const),
+    content: privateSpanArb(),
+  });
+}
+
+/**
+ * Arbitrary message body with `<private>` spans injected into at least one
+ * turn's `content`.
+ */
+function messageBodyWithPrivateArb(): fc.Arbitrary<{
+  type: 'message';
+  turns: Array<{ role: string; content: string }>;
+}> {
+  return fc.record({
+    type: fc.constant('message' as const),
+    turns: fc.array(
+      fc.record({
+        role: fc.string({ minLength: 1, maxLength: 20 }).filter((s) => s.length > 0),
+        content: privateSpanArb(),
+      }),
+      { minLength: 1, maxLength: 5 },
+    ),
+  });
+}
+
+/**
+ * Arbitrary json body with `<private>` spans injected into string values.
+ *
+ * Generates a small object/array tree where every string leaf contains a
+ * private span, ensuring the recursive walk is exercised.
+ */
+function jsonBodyWithPrivateArb(): fc.Arbitrary<{ type: 'json'; data: unknown }> {
+  // Build a small JSON-like tree where string leaves contain private spans.
+  const leaf = privateSpanArb();
+  const jsonData: fc.Arbitrary<unknown> = fc.oneof(
+    leaf,
+    fc.array(leaf, { minLength: 1, maxLength: 3 }),
+    fc.dictionary(
+      fc.string({ minLength: 1, maxLength: 10 }).filter((s) => s.length > 0),
+      leaf,
+      { minKeys: 1, maxKeys: 3 },
+    ),
+  );
+
+  return fc.record({
+    type: fc.constant('json' as const),
+    data: jsonData,
+  });
+}
+
+/** Arbitrary `EventBody` with `<private>` spans across all three variants. */
+function eventBodyWithPrivateArb(): fc.Arbitrary<
+  | { type: 'text'; content: string }
+  | { type: 'message'; turns: Array<{ role: string; content: string }> }
+  | { type: 'json'; data: unknown }
+> {
+  return fc.oneof(
+    textBodyWithPrivateArb(),
+    messageBodyWithPrivateArb(),
+    jsonBodyWithPrivateArb(),
+  );
+}
+
+/**
+ * Arbitrary valid `KiroMemEvent` with `<private>...</private>` spans
+ * injected into the body content.
+ *
+ * Uses {@link arbitraryEvent} as a structural base and replaces the body
+ * with one that contains private spans (simple, nested, or unclosed) for
+ * all three body types (`text`, `message`, `json`).
+ *
+ * @see .kiro/specs/collector-pipeline/design.md § Property 1
+ * @see .kiro/specs/collector-pipeline/tasks.md § Task 2.6
+ */
+export function arbitraryEventWithPrivateSpans(): fc.Arbitrary<KiroMemEvent> {
+  return arbitraryEvent().chain((event) =>
+    eventBodyWithPrivateArb().map((body) => ({ ...event, body })),
+  );
+}
+
+// ── Clean-event generator (Task 2.9) ───────────────────────────────────
+
+/**
+ * Strip all occurrences of `<private>` from a string so it is guaranteed
+ * clean. Also strips `</private>` for completeness.
+ */
+function stripPrivateTags(s: string): string {
+  return s.replace(/<\/?private>/g, '');
+}
+
+/**
+ * Recursively strip `<private>` / `</private>` substrings from every
+ * string leaf inside a JSON-representable value.
+ */
+function stripPrivateFromJson(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return stripPrivateTags(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(stripPrivateFromJson);
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).map(
+      ([k, v]) => [stripPrivateTags(k), stripPrivateFromJson(v)] as const,
+    );
+    return Object.fromEntries(entries);
+  }
+  return value;
+}
+
+/**
+ * Arbitrary valid `KiroMemEvent` whose body contains **no** occurrence of
+ * the substring `<private>`. Built from {@link arbitraryEvent} with a
+ * `.map()` pass that strips any accidental `<private>` / `</private>`
+ * substrings from generated string fields.
+ *
+ * @see .kiro/specs/collector-pipeline/design.md § Property 4
+ * @see .kiro/specs/collector-pipeline/tasks.md § Task 2.9
+ */
+export function arbitraryCleanEvent(): fc.Arbitrary<KiroMemEvent> {
+  return arbitraryEvent().map((event) => {
+    const body = event.body;
+    let cleanBody: KiroMemEvent['body'];
+
+    switch (body.type) {
+      case 'text': {
+        cleanBody = { ...body, content: stripPrivateTags(body.content) };
+        break;
+      }
+      case 'message': {
+        cleanBody = {
+          ...body,
+          turns: body.turns.map((turn) => ({
+            ...turn,
+            content: stripPrivateTags(turn.content),
+          })),
+        };
+        break;
+      }
+      case 'json': {
+        cleanBody = { ...body, data: stripPrivateFromJson(body.data) };
+        break;
+      }
+    }
+
+    return { ...event, body: cleanBody };
+  });
+}
