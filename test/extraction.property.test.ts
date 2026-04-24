@@ -58,7 +58,7 @@ function createFakeChildProcess(): ChildProcess {
     Math.random() * 100000,
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   proc.kill = (_signal?: number | NodeJS.Signals): boolean => {
     return true;
   };
