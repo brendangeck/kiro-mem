@@ -1,18 +1,14 @@
 name: Release
 
-# Runs semantic-release on every push to `main`. Reads conventional
-# commits since the last release, decides the next version, and:
-#   1. updates package.json + CHANGELOG.md
-#   2. publishes to npm (with provenance attestation)
-#   3. commits the version bump back to main as `chore(release): ...`
-#      with `[skip ci]` so CI does not loop
-#   4. creates a GitHub Release with the generated notes
-#
-# No-ops gracefully when the commit range contains nothing releasable
-# (e.g. only `chore:` / `docs:` commits).
+# Runs semantic-release only after the CI workflow succeeds on `main`.
+# This ensures typecheck, lint, test, and build all pass before we
+# attempt to publish. No-ops gracefully when the commit range contains
+# nothing releasable (e.g. only `chore:` / `docs:` commits).
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 # Serialize releases. If two merges land back-to-back, the second waits
@@ -27,6 +23,10 @@ jobs:
     name: semantic-release
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # Only run if CI succeeded. workflow_run fires on both success and
+    # failure; this guard skips the release when CI is red.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     # `contents: write` — push the chore(release) commit + tag.
     # `issues: write` + `pull-requests: write` — post release-comment
@@ -63,28 +63,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Re-verify on the exact commit we're about to release. The CI
-      # workflow already did this on the PR, but doing it again here
-      # guards against anything that slipped in between merge and
-      # release (force-push to main, etc.) and keeps the audit trail
-      # on the release workflow itself.
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test
-
       - name: Build
         run: npm run build
 
       - name: Configure git credentials for release
-        # Inject the PAT into the git remote URL only at the point where
-        # semantic-release needs push access. This limits the window of
-        # credential exposure to the release step rather than the entire
-        # workflow run.
         run: |
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git config user.name "github-actions[bot]"
@@ -96,7 +78,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # Opt in to npm provenance; reads OIDC claims from the
-          # workflow run and records them on the published tarball.
           NPM_CONFIG_PROVENANCE: "true"
         run: npx semantic-release
