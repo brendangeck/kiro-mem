@@ -104,10 +104,17 @@ export function openSqliteStorage(opts: SqliteStorageOptions): StorageBackend {
   const db = new Database(opts.dbPath);
 
   // Apply pending DDL before preparing any statements — `prepareStatements`
-  // compiles against tables that must already exist.
-  runMigrations(db, MIGRATIONS);
-
-  const stmts = prepareStatements(db);
+  // compiles against tables that must already exist. If either step throws
+  // (e.g. MigrationDriftError, corrupt DDL, missing table), close the
+  // handle before rethrowing so the SQLite file is not left locked.
+  let stmts;
+  try {
+    runMigrations(db, MIGRATIONS);
+    stmts = prepareStatements(db);
+  } catch (err) {
+    db.close();
+    throw err;
+  }
 
   // Guards the `close` idempotency contract (Requirement 4.6 / N4). Once
   // the handle is closed further method calls would fail deep inside
