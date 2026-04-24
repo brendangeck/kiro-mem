@@ -1,9 +1,34 @@
 /**
  * Canonical types for kiro-mem.
  *
- * The Event schema is the one-way-door contract. See AGENTS.md for the full
- * narrative. Additions are additive; breaking changes bump `schema_version`.
+ * The `Event` schema is the one-way-door contract. See AGENTS.md for the
+ * architectural narrative and
+ * `.kiro/specs/event-schema-and-storage/design.md` for field-level details.
+ *
+ * Runtime shapes and validators live in `./schemas.js`; this module derives
+ * TypeScript types from those schemas and re-exports them alongside the
+ * interfaces used by the collector pipeline and storage layer.
+ *
+ * Additions to the `Event` or `MemoryRecord` shape MUST be additive; any
+ * breaking change bumps `schema_version`.
  */
+
+import type { KiroMemEvent, MemoryRecord } from './schemas.js';
+
+export {
+  EventBodySchema,
+  EventSchema,
+  EventSourceSchema,
+  MemoryRecordSchema,
+  ULID_RE,
+  RECORD_ID_RE,
+  NAMESPACE_RE,
+  CONTENT_HASH_RE,
+  parseEvent,
+  parseMemoryRecord,
+} from './schemas.js';
+
+export type { KiroMemEvent, MemoryRecord } from './schemas.js';
 
 /**
  * The discrete kinds of events a client may emit.
@@ -12,61 +37,51 @@
  * - `tool_use` — a single tool invocation within a prompt turn
  * - `session_summary` — a session-closing summary
  * - `note` — a manually recorded note (future use)
+ *
+ * Derived from {@link KiroMemEvent} so it stays in lockstep with the Zod
+ * schema.
+ *
+ * @see Requirements 1.2
  */
-export type EventKind = 'prompt' | 'tool_use' | 'session_summary' | 'note';
+export type EventKind = KiroMemEvent['kind'];
 
 /**
- * Discriminated body. The `type` tells the collector how to interpret `content`.
+ * Discriminated body. The `type` tells the collector how to interpret the
+ * payload (text content, message turns, or arbitrary JSON data).
+ *
+ * @see Requirements 1.3
  */
-export type EventBody =
-  | { type: 'text'; content: string }
-  | { type: 'message'; turns: Array<{ role: string; content: string }> }
-  | { type: 'json'; data: unknown };
-
-export interface EventSource {
-  surface: 'kiro-cli' | 'kiro-ide';
-  version: string;
-  client_id: string;
-}
+export type EventBody = KiroMemEvent['body'];
 
 /**
- * Wire-level ingest unit. Posted by a shim to `POST /v1/events`.
+ * Provenance block — who emitted the event and from which client surface.
+ *
+ * @see Requirements 1.4
  */
-export interface KiroMemEvent {
-  event_id: string;
-  parent_event_id?: string;
-  session_id: string;
-  actor_id: string;
+export type EventSource = KiroMemEvent['source'];
+
+/**
+ * Parameters accepted by {@link StorageBackend.searchMemoryRecords}. The
+ * `namespace` is treated as a prefix (trailing-slash convention); `query` is
+ * a user-supplied string and is sanitized by the storage layer before being
+ * passed to FTS5.
+ *
+ * @see Requirements 4.5, 8.3, 8.4
+ */
+export interface SearchParams {
   namespace: string;
-  schema_version: 1;
-
-  kind: EventKind;
-  body: EventBody;
-
-  valid_time: string;
-
-  source: EventSource;
-
-  content_hash?: string;
+  query: string;
+  limit: number;
 }
 
 /**
- * Processed, long-term memory unit extracted from one or more events by a
- * memory strategy. Stored under a namespace, retrieved at enrichment time.
- */
-export interface MemoryRecord {
-  record_id: string;
-  namespace: string;
-  strategy: string;
-  title: string;
-  summary: string;
-  facts: string[];
-  source_event_ids: string[];
-  created_at: string;
-}
-
-/**
- * Result returned to the shim in response to a POST /v1/events call.
+ * Result returned to the shim in response to a `POST /v1/events` call. When
+ * the shim requested synchronous enrichment, `enrichment` is populated.
+ *
+ * Not directly a requirement in this spec; part of the collector API
+ * surface consumed by downstream receiver / enrichment specs.
+ *
+ * @see Requirements 1.5 (re-exported on the package entry point)
  */
 export interface EventIngestResponse {
   event_id: string;
@@ -74,6 +89,15 @@ export interface EventIngestResponse {
   enrichment?: EnrichmentResult;
 }
 
+/**
+ * Context assembled by the enrichment subsystem for a single prompt-time
+ * lookup. Returned inline in the ingest response.
+ *
+ * Not directly a requirement in this spec; part of the collector API
+ * surface consumed by downstream enrichment specs.
+ *
+ * @see Requirements 1.5 (re-exported on the package entry point)
+ */
 export interface EnrichmentResult {
   context: string;
   records: string[];
@@ -82,15 +106,23 @@ export interface EnrichmentResult {
 
 /**
  * Storage backend interface. Any backend (SQLite, pgvector, AgentCore) must
- * implement this. v1 ships only the SQLite implementation.
+ * implement this identically. v1 ships only the SQLite implementation.
+ *
+ * Behavioral contracts (see design.md § Key Functions):
+ * - `putEvent` is idempotent on `event_id`; duplicate calls are a no-op and
+ *   do not re-stamp `transaction_time`.
+ * - `getEventById` returns `null` for unknown ids; it does not throw.
+ * - `putMemoryRecord` rejects on `record_id` collision.
+ * - `searchMemoryRecords` returns at most `limit` records, all of whose
+ *   namespaces start with the supplied `namespace` prefix.
+ * - `close` is safe to call more than once.
+ *
+ * @see Requirements 4.1–4.6
  */
 export interface StorageBackend {
   putEvent(event: KiroMemEvent): Promise<void>;
+  getEventById(eventId: string): Promise<KiroMemEvent | null>;
   putMemoryRecord(record: MemoryRecord): Promise<void>;
-  searchMemoryRecords(params: {
-    namespace: string;
-    query: string;
-    limit: number;
-  }): Promise<MemoryRecord[]>;
+  searchMemoryRecords(params: SearchParams): Promise<MemoryRecord[]>;
   close(): Promise<void>;
 }
