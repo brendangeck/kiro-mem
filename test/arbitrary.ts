@@ -441,7 +441,7 @@ function stripPrivateFromJson(value: unknown): unknown {
   }
   if (value !== null && typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>).map(
-      ([k, v]) => [k, stripPrivateFromJson(v)] as const,
+      ([k, v]) => [stripPrivateTags(k), stripPrivateFromJson(v)] as const,
     );
     return Object.fromEntries(entries);
   }

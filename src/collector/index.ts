@@ -11,11 +11,23 @@
  * @see Requirements 14.1–14.5, 15.1
  */
 
+import { homedir } from 'node:os';
+
 import { openSqliteStorage } from './storage/sqlite/index.js';
 import { createPipeline } from './pipeline/index.js';
 import { createQueryLayer } from './query/index.js';
 import { createRetrievalAssembler } from './retrieval/index.js';
 import { startReceiver } from './receiver/index.js';
+
+/**
+ * Expand a leading `~` or `~/` to the real home directory. Node.js does
+ * not expand tilde in filesystem APIs — only the shell does.
+ */
+function expandTilde(p: string): string {
+  if (p === '~') return homedir();
+  if (p.startsWith('~/')) return homedir() + p.slice(1);
+  return p;
+}
 
 // ── Configuration ───────────────────────────────────────────────────────
 
@@ -31,7 +43,7 @@ export interface CollectorConfig {
   port: number;
   /** HTTP bind address. Default `'127.0.0.1'`. */
   host: string;
-  /** Path to the SQLite database file. Default `'~/.kiro-learn/kiro-learn.db'`. */
+  /** Path to the SQLite database file. Default `'~/.kiro-learn/kiro-learn.db'`. A leading `~` is expanded to the user's home directory. */
   storagePath: string;
   /** Hard deadline for retrieval assembly in milliseconds. Default `500`. */
   retrievalBudgetMs: number;
@@ -107,43 +119,51 @@ export async function startCollector(
   const cfg: CollectorConfig = { ...DEFAULT_COLLECTOR_CONFIG, ...config };
 
   // 1. Open storage (this is the ONLY place that knows the concrete backend)
-  const storage = openSqliteStorage({ dbPath: cfg.storagePath });
+  const dbPath = expandTilde(cfg.storagePath);
+  const storage = openSqliteStorage({ dbPath });
 
-  // 2. Create pipeline with all stages, injecting StorageBackend
-  const pipeline = createPipeline({
-    storage,
-    extractionConcurrency: cfg.extractionConcurrency,
-    extractionQueueDepth: cfg.extractionQueueDepth,
-    extractionTimeout: cfg.extractionTimeoutMs,
-    dedupMaxSize: cfg.dedupMaxSize,
-  });
+  // Wrap subsequent wiring so storage is closed if anything throws.
+  try {
+    // 2. Create pipeline with all stages, injecting StorageBackend
+    const pipeline = createPipeline({
+      storage,
+      extractionConcurrency: cfg.extractionConcurrency,
+      extractionQueueDepth: cfg.extractionQueueDepth,
+      extractionTimeout: cfg.extractionTimeoutMs,
+      dedupMaxSize: cfg.dedupMaxSize,
+    });
 
-  // 3. Create query layer, injecting StorageBackend
-  const queryLayer = createQueryLayer(storage);
+    // 3. Create query layer, injecting StorageBackend
+    const queryLayer = createQueryLayer(storage);
 
-  // 4. Create retrieval assembler, injecting query layer
-  const retrieval = createRetrievalAssembler({
-    query: queryLayer,
-    resultLimit: cfg.resultLimit,
-  });
+    // 4. Create retrieval assembler, injecting query layer
+    const retrieval = createRetrievalAssembler({
+      query: queryLayer,
+      resultLimit: cfg.resultLimit,
+    });
 
-  // 5. Start HTTP receiver, injecting pipeline and retrieval
-  const receiver = await startReceiver(
-    { pipeline, retrieval },
-    {
-      host: cfg.host,
-      port: cfg.port,
-      maxBodyBytes: cfg.maxBodyBytes,
-      retrievalBudgetMs: cfg.retrievalBudgetMs,
-    },
-  );
+    // 5. Start HTTP receiver, injecting pipeline and retrieval
+    const receiver = await startReceiver(
+      { pipeline, retrieval },
+      {
+        host: cfg.host,
+        port: cfg.port,
+        maxBodyBytes: cfg.maxBodyBytes,
+        retrievalBudgetMs: cfg.retrievalBudgetMs,
+      },
+    );
 
-  // 6. Return handle with close method
-  return {
-    async close(): Promise<void> {
-      await receiver.close();
-      await pipeline.extraction.drain(DRAIN_TIMEOUT_MS);
-      await storage.close();
-    },
-  };
+    // 6. Return handle with close method
+    return {
+      async close(): Promise<void> {
+        await receiver.close();
+        await pipeline.extraction.drain(DRAIN_TIMEOUT_MS);
+        await storage.close();
+      },
+    };
+  } catch (err) {
+    // Ensure the DB handle is released if wiring fails.
+    await storage.close();
+    throw err;
+  }
 }

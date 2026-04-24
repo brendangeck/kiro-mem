@@ -143,6 +143,10 @@ export interface DedupStage extends PipelineProcessor {
 export function createDedupStage(
   opts: DedupStageOptions = { maxSize: 10_000 },
 ): DedupStage {
+  if (opts.maxSize <= 0) {
+    throw new RangeError('maxSize must be > 0');
+  }
+
   const seen = new Map<string, true>();
 
   return {
@@ -415,6 +419,16 @@ export function createExtractionStage(
 ): ExtractionStage {
   const { storage, concurrency, queueDepth, timeoutMs } = opts;
 
+  if (concurrency <= 0) {
+    throw new RangeError('concurrency must be > 0');
+  }
+  if (queueDepth < 1) {
+    throw new RangeError('queueDepth must be >= 1');
+  }
+  if (timeoutMs <= 0) {
+    throw new RangeError('timeoutMs must be > 0');
+  }
+
   let active = 0;
   const queue: KiroMemEvent[] = [];
 
@@ -566,10 +580,7 @@ export function createPipeline(opts: PipelineOptions): Pipeline {
         console.error(
           `pipeline error for event ${event.event_id}: ${message}`,
         );
-        return {
-          event_id: event.event_id,
-          stored: false,
-        };
+        throw error;
       }
     },
   };
