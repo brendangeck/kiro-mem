@@ -1,3 +1,9 @@
+## [0.4.0](https://github.com/brendangeck/kiro-learn/compare/v0.3.0...v0.4.0) (2026-04-24)
+
+### Features
+
+* implement kiro-learn CLI agent shim ([#5](https://github.com/brendangeck/kiro-learn/issues/5)) ([d4ab686](https://github.com/brendangeck/kiro-learn/commit/d4ab6868a5af19e36d6643826f5a2121d54512a8))
+
 ## [0.3.0](https://github.com/brendangeck/kiro-learn/compare/v0.2.0...v0.3.0) (2026-04-24)
 
 ### Features
