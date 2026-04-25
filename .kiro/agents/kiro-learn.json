@@ -1,0 +1,27 @@
+{
+  "name": "kiro-learn",
+  "description": "Continuous learning for Kiro sessions. Captures tool-use events and injects prior context.",
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "\"/Users/bgeck/.kiro-learn/bin/shim\" || true"
+      }
+    ],
+    "userPromptSubmit": [
+      {
+        "command": "\"/Users/bgeck/.kiro-learn/bin/shim\" || true"
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "*",
+        "command": "\"/Users/bgeck/.kiro-learn/bin/shim\" || true"
+      }
+    ],
+    "stop": [
+      {
+        "command": "\"/Users/bgeck/.kiro-learn/bin/shim\" || true"
+      }
+    ]
+  }
+}
