@@ -103,6 +103,55 @@ export async function createAcpSession(
     { stdio: ['pipe', 'pipe', 'pipe'] },
   );
 
+  // Drain stderr immediately. The kiro-cli acp process writes verbose
+  // diagnostic output there (especially with `-v`), and Node's default
+  // behaviour is to leave the readable pipe paused. If stderr fills the
+  // OS pipe buffer (~64 KiB on macOS) the child blocks on its next
+  // write() and the whole extraction stalls. Attaching `resume()`
+  // switches the stream into flowing mode and discards bytes we do not
+  // surface to the caller.
+  child.stderr?.resume();
+
+  /**
+   * A promise that rejects if the child process fails to start or exits
+   * unexpectedly. We race this against every SDK call that could hang
+   * forever on a dead pipe (initialize, newSession, prompt). A rejection
+   * here surfaces the real cause — spawn error, exit code, terminating
+   * signal — instead of making the caller wait for the prompt timeout.
+   *
+   * Only the first failure matters, so we `resolve(never)` on the happy
+   * path (no one observes it) and arm listeners that reject on the
+   * first error or premature exit.
+   */
+  const childFailed = new Promise<never>((_, reject) => {
+    child.on('error', (err: Error) => {
+      reject(
+        new Error(
+          `kiro-cli acp failed to spawn: ${err.message}`,
+          { cause: err },
+        ),
+      );
+    });
+    child.on('exit', (code, signal) => {
+      // An `exit` fired at all during the lifetime of this promise
+      // means the child died before we observed a completion path.
+      // For handshake + sendPrompt, this is always a failure; a clean
+      // shutdown comes through destroy() which kills the child AFTER
+      // the caller's work is done, at which point no one is awaiting
+      // this promise anymore.
+      const detail =
+        signal !== null
+          ? `killed by signal ${signal}`
+          : `exited with code ${String(code)}`;
+      reject(new Error(`kiro-cli acp ${detail} unexpectedly`));
+    });
+  });
+
+  // Prevent Node from warning about unhandled rejections when the happy
+  // path finishes before the child exits. Attaching a no-op `.catch`
+  // does not consume the rejection — Promise.race still sees it.
+  childFailed.catch(() => { /* swallow: observed via race */ });
+
   // The SDK's ndJsonStream expects Web Streams over Uint8Array. Node's
   // child stdio is Node streams, so we adapt via the built-in bridge.
   const input = Writable.toWeb(child.stdin!);
@@ -215,18 +264,28 @@ export async function createAcpSession(
   // of MCP servers. If either step fails we destroy the child and
   // re-throw so no process is leaked.
   //
+  // Each SDK call is raced against `childFailed` so a spawn error or
+  // premature child exit surfaces immediately instead of leaving the
+  // caller waiting on a closed pipe forever.
+  //
   // @see Requirements 1.2, 1.3, 1.8
   let sessionId: string;
   try {
-    await connection.initialize({
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: {},
-      clientInfo: { name: CLIENT_NAME, version: CLIENT_VERSION },
-    });
-    const sessionResult = await connection.newSession({
-      cwd: process.cwd(),
-      mcpServers: [],
-    });
+    await Promise.race([
+      connection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: {},
+        clientInfo: { name: CLIENT_NAME, version: CLIENT_VERSION },
+      }),
+      childFailed,
+    ]);
+    const sessionResult = await Promise.race([
+      connection.newSession({
+        cwd: process.cwd(),
+        mcpServers: [],
+      }),
+      childFailed,
+    ]);
     sessionId = sessionResult.sessionId;
   } catch (err: unknown) {
     destroy();
@@ -243,8 +302,10 @@ export async function createAcpSession(
      * resolves with a `PromptResponse` carrying a `stopReason` when the
      * agent's turn ends — that's our completion signal.
      *
-     * We race the prompt against a timeout so a stuck agent can't hang
-     * the pipeline.
+     * We race the prompt against both a timeout (so a stuck agent can't
+     * hang the pipeline) and `childFailed` (so a mid-turn crash of the
+     * child process surfaces immediately instead of waiting out the
+     * timeout).
      *
      * @see Requirements 1.4, 1.5, 1.6
      */
@@ -271,6 +332,7 @@ export async function createAcpSession(
             prompt: [{ type: 'text', text: content }],
           }),
           timeout,
+          childFailed,
         ]);
       } finally {
         if (timer !== undefined) clearTimeout(timer);

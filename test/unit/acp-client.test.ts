@@ -224,6 +224,74 @@ describe('ACP Client — createAcpSession (handshake)', () => {
 
     expect(fakeChild.kill).toHaveBeenCalledWith('SIGTERM');
   });
+
+  /**
+   * @see Requirements 1.1, 1.8
+   *
+   * If `kiro-cli` isn't on PATH (or fails to exec for any reason),
+   * `spawn` returns a ChildProcess that asynchronously emits `error`.
+   * Without a listener, Node would treat that as an unhandled error
+   * event. We attach a listener that translates it into a rejection
+   * on `childFailed`, which the handshake race surfaces as a thrown
+   * error from `createAcpSession`.
+   */
+  it('rejects when the child process emits a spawn error', async () => {
+    // Make initialize hang forever so the race is won by childFailed.
+    mockConnection.initialize.mockImplementationOnce(
+      () => new Promise(() => { /* never */ }),
+    );
+
+    const { createAcpSession } = await import(
+      '../../src/collector/pipeline/acp-client.js'
+    );
+
+    const sessionPromise = createAcpSession({
+      agentName: 'test-agent',
+      timeoutMs: 5000,
+    });
+
+    // Let microtasks run so the handshake gets into Promise.race.
+    await Promise.resolve();
+
+    // Simulate a spawn/exec failure (e.g. kiro-cli not on PATH).
+    fakeChild.emit('error', new Error('ENOENT: kiro-cli not found'));
+
+    await expect(sessionPromise).rejects.toThrow(/failed to spawn/);
+    await expect(sessionPromise).rejects.toThrow(/ENOENT/);
+    expect(fakeChild.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  /**
+   * @see Requirements 1.1, 1.8
+   *
+   * If the child process exits cleanly during the handshake (for
+   * example because the agent name is invalid and kiro-cli prints
+   * an error and terminates), the SDK call will never resolve —
+   * its stdio pipe is closed. `childFailed` notices the exit and
+   * surfaces it as a specific error rather than hanging forever.
+   */
+  it('rejects when the child process exits during the handshake', async () => {
+    mockConnection.initialize.mockImplementationOnce(
+      () => new Promise(() => { /* never */ }),
+    );
+
+    const { createAcpSession } = await import(
+      '../../src/collector/pipeline/acp-client.js'
+    );
+
+    const sessionPromise = createAcpSession({
+      agentName: 'test-agent',
+      timeoutMs: 5000,
+    });
+
+    await Promise.resolve();
+
+    // Simulate a premature exit (code 1, no signal).
+    fakeChild.emit('exit', 1, null);
+
+    await expect(sessionPromise).rejects.toThrow(/exited with code 1/);
+    expect(fakeChild.kill).toHaveBeenCalledWith('SIGTERM');
+  });
 });
 
 describe('ACP Client — sendPrompt', () => {
@@ -352,6 +420,39 @@ describe('ACP Client — sendPrompt', () => {
     );
 
     expect(fakeChild.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  /**
+   * @see Requirements 1.6
+   *
+   * Without the childFailed race, a mid-turn child crash would stall
+   * sendPrompt until the user-configured timeout (default 30s) fired.
+   * With the race, the exit event surfaces immediately as a rejection,
+   * keeping the extraction stage's retry loop snappy.
+   */
+  it('rejects quickly when the child process exits during a prompt turn', async () => {
+    const session = await createSession({
+      agentName: 'test-agent',
+      timeoutMs: 30_000,
+    });
+
+    // prompt() never resolves on its own; only the child exit should end it.
+    mockConnection.prompt.mockImplementationOnce(
+      () => new Promise(() => { /* never */ }),
+    );
+
+    const promptPromise = session.sendPrompt('something');
+
+    await Promise.resolve();
+
+    // Simulate the child crashing mid-turn.
+    fakeChild.emit('exit', null, 'SIGSEGV');
+
+    // No timer advance — the rejection must come from the exit event,
+    // not from the 30-second timeout.
+    await expect(promptPromise).rejects.toThrow(
+      /killed by signal SIGSEGV/,
+    );
   });
 
   /**
