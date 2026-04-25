@@ -1,3 +1,9 @@
+## [0.5.0](https://github.com/brendangeck/kiro-learn/compare/v0.4.0...v0.5.0) (2026-04-25)
+
+### Features
+
+* **installer:** implement kiro-learn CLI installer ([#6](https://github.com/brendangeck/kiro-learn/issues/6)) ([a0597ca](https://github.com/brendangeck/kiro-learn/commit/a0597cad1d42401ae568917853b02785551907ae))
+
 ## [0.4.0](https://github.com/brendangeck/kiro-learn/compare/v0.3.0...v0.4.0) (2026-04-24)
 
 ### Features
