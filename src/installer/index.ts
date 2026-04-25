@@ -431,7 +431,9 @@ export function writeAgentConfigs(scope: InstallScope): void {
     '\n' +
     'You will receive tool observations wrapped in <tool_observation> XML. Respond with ONLY XML — no prose, no markdown, no explanation.\n' +
     '\n' +
-    'Return one or more <memory_record> blocks, or an empty response if the observation should be skipped.\n' +
+    'Return one or more <memory_record> blocks, or signal skip by returning either:\n' +
+    '  - an empty response, or\n' +
+    '  - a single `<skip/>` tag (optionally with a `reason` attribute, e.g. `<skip reason="trivial observation"/>`).\n' +
     '\n' +
     'The `type` attribute MUST be exactly one of: tool_use, decision, error, discovery, pattern.\n' +
     'Pick a single value — never emit the literal pipe-delimited list below.\n' +
@@ -459,7 +461,7 @@ export function writeAgentConfigs(scope: InstallScope): void {
     '\n' +
     'Rules:\n' +
     '- Never reply with prose. Non-XML text is discarded.\n' +
-    '- Empty response = skip this observation (valid).\n' +
+    '- Valid skip signals: an empty response OR a single `<skip/>` tag.\n' +
     '- Concrete debugging findings count as discoveries.\n' +
     '- Focus on durable knowledge, not transient state.';
 

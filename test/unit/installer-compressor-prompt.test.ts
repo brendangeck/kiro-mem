@@ -117,6 +117,21 @@ describe('compressor agent XML prompt', () => {
     expect(prompt).toMatch(/empty response.*skip/i);
   });
 
+  it('documents the <skip/> token as an alternative skip signal', () => {
+    /**
+     * Validates: Requirement 7.4 (and consistency with isGarbageResponse,
+     * which treats `<skip>` as a non-garbage signal).
+     *
+     * The runtime path (invokeCompressor + isGarbageResponse) recognises
+     * `<skip/>` as a valid skip signal alongside an empty body. Without
+     * documenting it in the prompt, the model would never intentionally
+     * emit it — the token would be dead code. This test fails if the
+     * prompt stops mentioning `<skip`.
+     */
+    const prompt = readCompressorPrompt();
+    expect(prompt).toContain('<skip');
+  });
+
   it('instructs that non-XML text is discarded', () => {
     /**
      * Validates: Requirement 7.5

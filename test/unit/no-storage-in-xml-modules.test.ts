@@ -19,7 +19,7 @@
  * Validates: Requirements 9.1, 9.2, 9.3
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -40,16 +40,21 @@ function stripComments(source: string): string {
 }
 
 /**
- * Regex that matches `import ... from '<path>'` and
- * `export ... from '<path>'` statements. We only want to flag real
- * dependency edges, not incidental mentions of a forbidden path inside
- * string literals, variable names, or error messages.
+ * Regex that matches any TypeScript module specifier line:
  *
- * The pattern is intentionally loose on the middle (matching anything
- * up to `from`) so it catches default, namespace, named, and type-only
- * imports / re-exports in a single pass.
+ *   - `import ... from '<path>'`     (default/named/namespace imports)
+ *   - `import '<path>'`              (side-effect imports)
+ *   - `import('<path>')`             (dynamic imports)
+ *   - `export ... from '<path>'`     (re-exports)
+ *
+ * We only want to flag real dependency edges, not incidental mentions of
+ * a forbidden path inside string literals, variable names, or error
+ * messages. The pattern is intentionally permissive in the middle so it
+ * catches default, namespace, named, and type-only variants in a single
+ * pass, and accepts the side-effect form which has no `from` clause.
  */
-const IMPORT_LIKE_RE = /^\s*(?:import|export)\b[^;]*\bfrom\s+['"]/;
+const IMPORT_LIKE_RE =
+  /^\s*(?:import\s+(?:[^;'"]*\bfrom\s+)?|import\s*\(\s*|export\b[^;]*\bfrom\s+)['"]/;
 
 /**
  * Scan a single file for import/export-from lines matching a forbidden
@@ -145,5 +150,46 @@ describe('XML pipeline modules — import boundary guards', () => {
         ? `Modularity violation: ${offenders.map((o) => `${o.file}:${o.line} imports from storage/ — "${o.text}"`).join('; ')}`
         : '',
     ).toEqual([]);
+  });
+});
+
+/**
+ * Self-test for the `IMPORT_LIKE_RE` guard. Documents which forms the
+ * regex is expected to catch and which it should let through. If the
+ * regex is loosened (false positives on prose lines) or tightened
+ * (misses side-effect or dynamic imports), one of these cases fails.
+ */
+describe('IMPORT_LIKE_RE — recognised vs ignored lines', () => {
+  const tmpRoot = fileURLToPath(new URL('./', import.meta.url));
+
+  function matches(line: string): boolean {
+    // Write the line to a scratch file, run the offenders scan against
+    // a "storage/" pattern, and see whether the line was flagged. A
+    // line that is recognised as import-like AND contains `storage/`
+    // produces exactly one offender; an ignored line produces zero.
+    const scratch = `${tmpRoot}__boundary-regex-scratch.ts`;
+    writeFileSync(scratch, line + '\n', 'utf8');
+    try {
+      const offenders = findOffenders(scratch, /storage\//);
+      return offenders.length > 0;
+    } finally {
+      unlinkSync(scratch);
+    }
+  }
+
+  it.each([
+    ["import '../../src/collector/storage/foo.js';", true],
+    ["import foo from '../../src/collector/storage/foo.js';", true],
+    ["import { foo } from '../../src/collector/storage/foo.js';", true],
+    ["import * as S from '../../src/collector/storage/foo.js';", true],
+    ["import type { X } from '../../src/collector/storage/foo.js';", true],
+    ["export { foo } from '../../src/collector/storage/foo.js';", true],
+    ["export * from '../../src/collector/storage/foo.js';", true],
+    ["  import('../../src/collector/storage/foo.js');", true],
+    ["const msg = 'storage/ reference in a string';", false],
+    ["const importStorage = 1;", false],
+    ["throw new Error('cannot import from storage/ here');", false],
+  ])('classifies %j → flagged=%s', (line, expected) => {
+    expect(matches(line)).toBe(expected);
   });
 });
