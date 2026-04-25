@@ -47,7 +47,7 @@ Implement the kiro-learn installer — the `kiro-learn` CLI that ships as the np
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 17.3_
 
   - [x] 2.2 Implement `deployPayload()`
-    - Determine source `dist/` directory relative to the installer's own location (two levels up from `import.meta.url`)
+    - Determine source `dist/` directory relative to the installer's own location (one level up from `import.meta.url`)
     - On upgrade, remove existing `~/.kiro-learn/lib/` via `rmSync`
     - Copy `shim/`, `collector/`, `installer/`, `types/` subdirectories via `cpSync` with `recursive: true`
     - _Requirements: 3.1, 3.2, 3.3_

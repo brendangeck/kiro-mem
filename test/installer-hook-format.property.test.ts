@@ -124,9 +124,10 @@ describe('Installer — property: hook command format (P3)', () => {
 
           for (const [, hookEntries] of Object.entries(globalConfig.hooks)) {
             for (const entry of hookEntries) {
-              // Must contain absolute path (no tilde)
+              // Must contain absolute path (no tilde), quoted
               expect(entry.command).toContain(shimPath);
               expect(entry.command).not.toContain('~');
+              expect(entry.command).toContain('"');
               // Must end with || true
               expect(entry.command).toMatch(/\|\| true$/);
             }
@@ -148,6 +149,7 @@ describe('Installer — property: hook command format (P3)', () => {
               for (const entry of hookEntries) {
                 expect(entry.command).toContain(shimPath);
                 expect(entry.command).not.toContain('~');
+                expect(entry.command).toContain('"');
                 expect(entry.command).toMatch(/\|\| true$/);
               }
             }

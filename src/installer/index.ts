@@ -392,15 +392,18 @@ export function writeAgentConfigs(scope: InstallScope): void {
 
   // ── Agent 1: kiro-learn.json (hook-registering agent) ──
 
+  // Quote the shim path to handle home directories with spaces or special chars.
+  const quotedShimPath = `"${shimPath}"`;
+
   const kiroLearnConfig = {
     name: 'kiro-learn',
     description:
       'Continuous learning for Kiro sessions. Captures tool-use events and injects prior context.',
     hooks: {
-      agentSpawn: [{ command: shimPath + ' || true' }],
-      userPromptSubmit: [{ command: shimPath + ' || true' }],
-      postToolUse: [{ matcher: '*', command: shimPath + ' || true' }],
-      stop: [{ command: shimPath + ' || true' }],
+      agentSpawn: [{ command: quotedShimPath + ' || true' }],
+      userPromptSubmit: [{ command: quotedShimPath + ' || true' }],
+      postToolUse: [{ matcher: '*', command: quotedShimPath + ' || true' }],
+      stop: [{ command: quotedShimPath + ' || true' }],
     },
   };
 
@@ -467,6 +470,20 @@ export function setDefaultAgent(): void {
   }
 }
 
+// ── Installation check ───────────────────────────────────────────────────
+
+/**
+ * Check whether kiro-learn is properly installed (not just a leftover
+ * directory from `uninstall --keep-data`). Verifies INSTALL_DIR exists
+ * and contains the runtime package.json.
+ */
+function isInstalled(): boolean {
+  return (
+    existsSync(INSTALL_DIR) &&
+    existsSync(path.join(INSTALL_DIR, 'package.json'))
+  );
+}
+
 // ── Daemon lifecycle ────────────────────────────────────────────────────
 
 /**
@@ -495,7 +512,6 @@ export function getDaemonPid(): number | null {
 
   try {
     process.kill(pid, 0); // signal 0 = liveness check
-    return pid;
   } catch {
     process.stderr.write(
       `[kiro-learn] removed stale PID file (process ${pid} not running)\n`,
@@ -503,6 +519,27 @@ export function getDaemonPid(): number | null {
     unlinkSync(pidFile);
     return null;
   }
+
+  // Verify the process is actually our collector (PID may have been reused)
+  try {
+    const psOutput = execSync(`ps -p ${pid} -o command=`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (!psOutput.includes('collector')) {
+      process.stderr.write(
+        `[kiro-learn] PID ${pid} is not a kiro-learn collector (reused PID), removing stale PID file\n`,
+      );
+      unlinkSync(pidFile);
+      return null;
+    }
+  } catch {
+    // ps failed — process may have exited between kill(0) and ps; treat as stale
+    try { unlinkSync(pidFile); } catch { /* ignore */ }
+    return null;
+  }
+
+  return pid;
 }
 
 /**
@@ -773,7 +810,7 @@ export async function cmdInit(opts: InitOptions): Promise<number> {
  * @see Requirements 8.2, 8.6, 8.7
  */
 export function cmdStart(): number {
-  if (!existsSync(INSTALL_DIR)) {
+  if (!isInstalled()) {
     process.stderr.write(
       "[kiro-learn] not installed. Run 'npx kiro-learn init' first.\n",
     );
@@ -819,7 +856,7 @@ export function cmdStop(): number {
  * @see Requirements 10.1–10.7
  */
 export function cmdStatus(): number {
-  if (!existsSync(INSTALL_DIR)) {
+  if (!isInstalled()) {
     process.stderr.write('[kiro-learn] not installed\n');
     return 1;
   }

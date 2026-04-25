@@ -24,12 +24,13 @@ import type * as nodeOs from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import fc from 'fast-check';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Resolve symlinks (macOS /var → /private/var).
 let tmpHome: string = realpathSync(
   mkdtempSync(join(tmpdir(), 'kiro-learn-scope-prop-')),
 );
+const initialTmpHome = tmpHome;
 
 vi.mock('node:os', async (importOriginal) => {
   const original = (await importOriginal()) as typeof nodeOs;
@@ -44,6 +45,10 @@ const { detectScope } = await import('../src/installer/index.js');
 
 afterAll(() => {
   rmSync(tmpHome, { recursive: true, force: true });
+  // Also clean up the initial tmpHome if it differs from the current one
+  if (initialTmpHome !== tmpHome) {
+    rmSync(initialTmpHome, { recursive: true, force: true });
+  }
 });
 
 /** The 15 project markers used by detectScope. */
@@ -108,6 +113,11 @@ function hierarchyArb(): fc.Arbitrary<{
 }
 
 describe('Installer — property: scope detection correctness (P6)', () => {
+  afterEach(() => {
+    // Clean up the tmpHome created in beforeEach
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
   beforeEach(() => {
     // detectScope uses homedir() which returns tmpHome via mock.
     // We create a fresh tmpHome for each test to avoid cross-contamination.
@@ -247,7 +257,7 @@ describe('Installer — property: scope detection correctness (P6)', () => {
           }
         },
       ),
-      { numRuns: 15 }, // One per marker
+      { numRuns: 15 }, // At least as many as the marker count to maximize coverage
     );
   });
 });

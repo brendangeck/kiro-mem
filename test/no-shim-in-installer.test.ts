@@ -84,9 +84,9 @@ describe('installer modules — no shim imports', () => {
     // imports from string literals inside bin wrapper content (e.g.
     // `'import { main } from "../lib/shim/cli-agent/index.js";'`).
     //
-    // We also match `import type` and dynamic `import()` at statement level.
+    // We also match `import type`, dynamic `import()`, and `require()`.
     const shimImportPattern =
-      /^\s*(?:import|export)\b.*shim\//;
+      /^\s*(?:import|export)\b.*shim\/|(?:import|require)\s*\(.*shim\//;
 
     for (const file of files) {
       const stripped = stripComments(readFileSync(file, 'utf8'));

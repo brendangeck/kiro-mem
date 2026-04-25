@@ -17,7 +17,7 @@ import {
 import type * as nodeOs from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Resolve symlinks (macOS /var → /private/var) so that realpathSync
 // inside detectScope produces paths consistent with our mock homedir.
@@ -36,6 +36,9 @@ vi.mock('node:os', async (importOriginal) => {
 // Import after mock so vitest intercepts the module.
 const { detectScope } = await import('../src/installer/index.js');
 
+// The initial tmpHome created at module scope needs cleanup.
+const initialTmpHome = tmpHome;
+
 describe('detectScope', () => {
   beforeEach(() => {
     tmpHome = realpathSync(
@@ -45,6 +48,10 @@ describe('detectScope', () => {
 
   afterEach(() => {
     rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  afterAll(() => {
+    rmSync(initialTmpHome, { recursive: true, force: true });
   });
 
   it('returns global-only when cwd is $HOME', () => {

@@ -93,6 +93,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  vi.restoreAllMocks();
   rmSync(tmpHome, { recursive: true, force: true });
 });
 

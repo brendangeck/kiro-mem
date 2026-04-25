@@ -132,11 +132,12 @@ describe('writeAgentConfigs', () => {
     expect(config.hooks).toHaveProperty('postToolUse');
     expect(config.hooks).toHaveProperty('stop');
 
-    // Every command must use absolute path and end with || true
+    // Every command must use absolute path (quoted) and end with || true
     const shimPath = join(INSTALL_DIR, 'bin', 'shim');
     for (const [, hookEntries] of Object.entries(config.hooks)) {
       for (const entry of hookEntries) {
         expect(entry.command).toContain(shimPath);
+        expect(entry.command).toContain('"');
         expect(entry.command).toMatch(/\|\| true$/);
       }
     }
