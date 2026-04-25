@@ -28,6 +28,8 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
+    "test:integ": "vitest run --config vitest.config.integ.ts",
+    "test:all": "vitest run --config vitest.config.ts && vitest run --config vitest.config.integ.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
