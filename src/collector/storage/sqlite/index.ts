@@ -182,6 +182,9 @@ export function openSqliteStorage(opts: SqliteStorageOptions): StorageBackend {
         JSON.stringify(record.facts),
         JSON.stringify(record.source_event_ids),
         record.created_at,
+        JSON.stringify(record.concepts),
+        JSON.stringify(record.files_touched),
+        record.observation_type,
       );
       stmts.insertMemoryRecordFts.run(
         record.record_id,
@@ -298,12 +301,18 @@ function rowToEvent(row: EventRow): KiroMemEvent {
 /**
  * Reassemble a {@link MemoryRecord} from a raw {@link MemoryRecordRow}.
  *
- * `facts_json` and `source_event_ids_json` round-trip through
+ * JSON-encoded TEXT columns (`facts_json`, `source_event_ids_json`,
+ * `concepts_json`, `files_touched_json`) round-trip through
  * `JSON.stringify` on write and `JSON.parse` on read. The upstream
- * `parseMemoryRecord` guarantees both are arrays of strings, so the
+ * `parseMemoryRecord` guarantees each is an array of strings, so the
  * casts here are sound against validated input.
  *
- * @see Requirements 8.1, 8.3
+ * `observation_type` is persisted as TEXT with a SQLite `CHECK`
+ * constraint restricting it to the five allowed enum values
+ * (see migration 0002), so the cast to `ObservationType` is sound
+ * against any row that reached the database through `putMemoryRecord`.
+ *
+ * @see Requirements 8.1, 8.2, 8.3
  */
 function rowToMemoryRecord(row: MemoryRecordRow): MemoryRecord {
   return {
@@ -315,11 +324,9 @@ function rowToMemoryRecord(row: MemoryRecordRow): MemoryRecord {
     facts: JSON.parse(row.facts_json) as string[],
     source_event_ids: JSON.parse(row.source_event_ids_json) as string[],
     created_at: row.created_at,
-    // New required fields from XML extraction pipeline. The SQLite schema
-    // does not yet have dedicated columns for these; a future migration
-    // will add them. Until then, default to empty arrays and 'tool_use'.
-    concepts: [],
-    files_touched: [],
-    observation_type: 'tool_use',
+    concepts: JSON.parse(row.concepts_json) as string[],
+    files_touched: JSON.parse(row.files_touched_json) as string[],
+    observation_type:
+      row.observation_type as MemoryRecord['observation_type'],
   };
 }

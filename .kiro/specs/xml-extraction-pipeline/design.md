@@ -306,7 +306,7 @@ async function runExtraction(event: KiroMemEvent): Promise<void>;
 
 **Updated prompt.**
 
-```
+```text
 You are a memory extraction agent for kiro-learn. Your ONLY job is to analyze tool-use observations and produce structured memory records.
 
 You will receive tool observations wrapped in <tool_observation> XML. Respond with ONLY XML — no prose, no markdown, no explanation.
@@ -376,7 +376,7 @@ These fields are required. This is a v0 build with no deployed records to preser
 ### XML Output Schema
 
 ```xml
-<memory_record type="implementation">
+<memory_record type="discovery">
   <title>Added JWT validation to auth module</title>
   <summary>Wrote JWT token validation logic in src/auth.ts</summary>
   <facts>
@@ -762,8 +762,13 @@ async function runExtraction(event: KiroMemEvent): Promise<void> {
     const rawRecords = await invokeCompressor(event, timeoutMs, maxRetries);
 
     for (const raw of rawRecords) {
+      // Generate a unique record_id per extracted record. A single event
+      // can yield multiple memory records, so deriving the id from
+      // event_id alone would collide on the PUT. Using a fresh ULID
+      // keeps ids sortable by creation order without coordinating with
+      // a DB-side sequence.
       const enriched = {
-        record_id: `mr_${event.event_id}`,
+        record_id: `mr_${ulid()}`,
         namespace: event.namespace,
         strategy: 'llm-summary',
         source_event_ids: [event.event_id],

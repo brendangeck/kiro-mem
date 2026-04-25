@@ -40,8 +40,28 @@ function stripComments(source: string): string {
 }
 
 /**
- * Scan a single file for lines matching a forbidden import pattern.
- * Returns an array of offending lines (empty if clean).
+ * Regex that matches `import ... from '<path>'` and
+ * `export ... from '<path>'` statements. We only want to flag real
+ * dependency edges, not incidental mentions of a forbidden path inside
+ * string literals, variable names, or error messages.
+ *
+ * The pattern is intentionally loose on the middle (matching anything
+ * up to `from`) so it catches default, namespace, named, and type-only
+ * imports / re-exports in a single pass.
+ */
+const IMPORT_LIKE_RE = /^\s*(?:import|export)\b[^;]*\bfrom\s+['"]/;
+
+/**
+ * Scan a single file for import/export-from lines matching a forbidden
+ * import pattern. Returns an array of offending lines (empty if clean).
+ *
+ * A line is an offender only when BOTH conditions hold:
+ *   1. It is an `import ... from '<path>'` or `export ... from '<path>'`.
+ *   2. Its text matches the forbidden `pattern` (e.g. /storage\//).
+ *
+ * This dual check avoids false positives when the forbidden substring
+ * appears inside a comment, a variable name, a diagnostic message, or
+ * an inline regex literal in unrelated code.
  */
 function findOffenders(
   filePath: string,
@@ -53,7 +73,7 @@ function findOffenders(
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    if (pattern.test(line)) {
+    if (IMPORT_LIKE_RE.test(line) && pattern.test(line)) {
       offenders.push({ file: filePath, line: i + 1, text: line.trim() });
     }
   }

@@ -493,6 +493,95 @@ describe('SQLite backend — property: stored-row schema invariants (P4, task 6.
 });
 
 /* ────────────────────────────────────────────────────────────────────
+ * XML extraction fields — round-trip preservation (finding 8)
+ * ──────────────────────────────────────────────────────────────────── */
+
+describe('SQLite backend — property: XML extraction fields round-trip (finding 8)', () => {
+  it('concepts, files_touched, and observation_type survive a write/read cycle', async () => {
+    /**
+     * **Validates: Requirements 8.1, 8.2, 8.3**
+     *
+     * The new fields added by the XML extraction pipeline (`concepts`,
+     * `files_touched`, `observation_type`) MUST round-trip through the
+     * SQLite backend without being silently defaulted. A regression in
+     * `rowToMemoryRecord` — e.g. reintroducing the old hardcoded
+     * `concepts: []` / `files_touched: []` / `observation_type: 'tool_use'`
+     * defaults — would be caught here, because the search fallback reads
+     * rows back and we compare every non-trivial case against the
+     * values we wrote.
+     *
+     * We generate each record's three new fields as arbitraries so a
+     * single iteration can populate non-default values across the
+     * spectrum (empty arrays, single entries, multi-entry lists,
+     * unicode, and every enum value for `observation_type`).
+     */
+    const conceptArb = fc
+      .string({ minLength: 1, maxLength: 100 })
+      .filter((s) => s.length > 0);
+    const fileArb = fc
+      .string({ minLength: 1, maxLength: 500 })
+      .filter((s) => s.length > 0);
+    const observationTypeArb = fc.constantFrom(
+      'tool_use' as const,
+      'decision' as const,
+      'error' as const,
+      'discovery' as const,
+      'pattern' as const,
+    );
+
+    await fc.assert(
+      fc.asyncProperty(
+        fc.record({
+          concepts: fc.array(conceptArb, { minLength: 0, maxLength: 5 }),
+          files_touched: fc.array(fileArb, { minLength: 0, maxLength: 5 }),
+          observation_type: observationTypeArb,
+        }),
+        async (fields) => {
+          const s = openScratch();
+          try {
+            const namespace = '/actor/alice/project/roundtrip-new-fields/';
+            const record: MemoryRecord = {
+              record_id: makeRecordId(0),
+              namespace,
+              strategy: 'llm-summary',
+              title: 'roundtrip title',
+              summary: 'roundtrip summary shared across iterations',
+              facts: ['anchor fact'],
+              source_event_ids: ['01JF8ZS4Y00000000000000000'],
+              created_at: '2026-04-23T20:00:00Z',
+              concepts: fields.concepts,
+              files_touched: fields.files_touched,
+              observation_type: fields.observation_type,
+            };
+            await s.storage.putMemoryRecord(record);
+
+            // Use a query term we know appears in every record so the
+            // primary FTS path lights up and returns the row we just
+            // wrote. The row comes back through `rowToMemoryRecord`, so
+            // any regression there (e.g. hardcoded defaults) is caught
+            // by the equality checks below.
+            const hits = await s.storage.searchMemoryRecords({
+              namespace,
+              query: 'roundtrip',
+              limit: 5,
+            });
+
+            expect(hits).toHaveLength(1);
+            const got = hits[0]!;
+            expect(got.concepts).toEqual(fields.concepts);
+            expect(got.files_touched).toEqual(fields.files_touched);
+            expect(got.observation_type).toBe(fields.observation_type);
+          } finally {
+            await cleanupScratch(s);
+          }
+        },
+      ),
+      { numRuns: 30 },
+    );
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────
  * Task 6.6 — FTS5 query sanitisation is safe
  * ──────────────────────────────────────────────────────────────────── */
 

@@ -267,6 +267,7 @@ export function writePackageJson(): void {
     private: true,
     type: 'module',
     dependencies: {
+      '@agentclientprotocol/sdk': '0.20.0',
       'better-sqlite3': '12.0.0',
       ulidx: '2.4.1',
       zod: '3.23.0',
@@ -432,7 +433,10 @@ export function writeAgentConfigs(scope: InstallScope): void {
     '\n' +
     'Return one or more <memory_record> blocks, or an empty response if the observation should be skipped.\n' +
     '\n' +
-    '<memory_record type="tool_use | decision | error | discovery | pattern">\n' +
+    'The `type` attribute MUST be exactly one of: tool_use, decision, error, discovery, pattern.\n' +
+    'Pick a single value — never emit the literal pipe-delimited list below.\n' +
+    '\n' +
+    '<memory_record type="TYPE">\n' +
     '  <title>Concise title (max 200 chars)</title>\n' +
     '  <summary>What happened and why it matters</summary>\n' +
     '  <facts>\n' +
@@ -445,6 +449,13 @@ export function writeAgentConfigs(scope: InstallScope): void {
     '    <file>path/to/file</file>\n' +
     '  </files>\n' +
     '</memory_record>\n' +
+    '\n' +
+    'Concrete examples:\n' +
+    '- type="tool_use" — a file read, write, or command invocation happened.\n' +
+    '- type="decision" — a design or architectural choice was made.\n' +
+    '- type="error" — a failure or bug was encountered.\n' +
+    '- type="discovery" — a concrete debugging finding or learned fact.\n' +
+    '- type="pattern" — a recurring approach or convention.\n' +
     '\n' +
     'Rules:\n' +
     '- Never reply with prose. Non-XML text is discarded.\n' +

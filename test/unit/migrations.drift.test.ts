@@ -40,8 +40,9 @@ describe('runMigrations — drift detection', () => {
   });
 
   it('throws MigrationDriftError when _migrations.name disagrees with code (Requirement 9.4)', () => {
-    // 1. Apply the canonical migration list. This leaves `_migrations` with
-    //    exactly one row: (version=1, name='0001_init', applied_at=<iso>).
+    // 1. Apply the canonical migration list. The drift guard doesn't
+    //    care how many migrations there are; the only thing the test
+    //    needs is a known baseline so we can mutate it in step 2.
     runMigrations(db, MIGRATIONS);
 
     // Sanity-check the baseline so the mutation in step 2 is meaningful.
@@ -50,7 +51,11 @@ describe('runMigrations — drift detection', () => {
         'SELECT version, name FROM _migrations ORDER BY version',
       )
       .all();
-    expect(baseline).toEqual([{ version: 1, name: '0001_init' }]);
+    const expected = MIGRATIONS.map((m) => ({
+      version: m.version,
+      name: m.name,
+    }));
+    expect(baseline).toEqual(expected);
 
     // 2. Overwrite the recorded name in-place to simulate a history that no
     //    longer matches the code. A real-world version of this scenario is

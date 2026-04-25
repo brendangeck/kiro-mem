@@ -14,6 +14,9 @@
  * @see .kiro/specs/xml-extraction-pipeline/requirements.md § Requirements 4, 5
  */
 
+import { OBSERVATION_TYPES } from '../../types/index.js';
+import type { ObservationType as SchemaObservationType } from '../../types/index.js';
+
 // ── Regex patterns ──────────────────────────────────────────────────────
 
 /** Matches `<memory_record type="...">...</memory_record>` blocks. */
@@ -30,23 +33,24 @@ const SINGLE_TAG_RE = (tag: string): RegExp =>
 
 // ── Valid observation types ─────────────────────────────────────────────
 
-const VALID_TYPES = new Set<string>([
-  'tool_use',
-  'decision',
-  'error',
-  'discovery',
-  'pattern',
-]);
+/**
+ * Single source of truth for the allowed observation_type enum values.
+ * Derived from the Zod schema so the parser stays in sync with
+ * `MemoryRecordSchema` automatically — if the schema enum changes, this
+ * set changes, and any new value the compressor returns is either
+ * accepted (via a schema update) or silently dropped (by the parser).
+ */
+const VALID_TYPES: ReadonlySet<string> = new Set(OBSERVATION_TYPES);
 
 // ── Public types ────────────────────────────────────────────────────────
 
-/** The observation_type values the compressor may return. */
-export type ObservationType =
-  | 'tool_use'
-  | 'decision'
-  | 'error'
-  | 'discovery'
-  | 'pattern';
+/**
+ * The observation_type values the compressor may return.
+ *
+ * Re-exported from `src/types/schemas.ts` to avoid maintaining a
+ * parallel union type here. The schema is canonical.
+ */
+export type ObservationType = SchemaObservationType;
 
 /**
  * Raw parsed fields from a single `<memory_record>` block.
