@@ -112,10 +112,22 @@ export const EventSchema = z.object({
 });
 
 /**
+ * The observation type values the compressor may return.
+ * @see Requirements 8.3
+ */
+export const OBSERVATION_TYPES = [
+  'tool_use',
+  'decision',
+  'error',
+  'discovery',
+  'pattern',
+] as const;
+
+/**
  * `MemoryRecord` schema — the long-term memory unit produced by a memory
  * strategy and stored under a namespace.
  *
- * @see Requirements 3.1, 3.3–3.5
+ * @see Requirements 3.1, 3.3–3.5, 8.1, 8.2, 8.3
  */
 export const MemoryRecordSchema = z.object({
   record_id: z.string().regex(RECORD_ID_RE),
@@ -126,6 +138,10 @@ export const MemoryRecordSchema = z.object({
   facts: z.array(z.string().min(1).max(500)),
   source_event_ids: z.array(z.string().regex(ULID_RE)).min(1),
   created_at: z.string().datetime({ offset: true }),
+  // New fields from XML extraction (Requirements 8.1, 8.2, 8.3)
+  concepts: z.array(z.string().min(1).max(100)),
+  files_touched: z.array(z.string().min(1).max(500)),
+  observation_type: z.enum(OBSERVATION_TYPES),
 });
 
 /**
@@ -141,6 +157,14 @@ export type KiroMemEvent = z.infer<typeof EventSchema>;
  * @see Requirements 3.1
  */
 export type MemoryRecord = z.infer<typeof MemoryRecordSchema>;
+
+/**
+ * The observation type classification for a memory record.
+ * Derived from {@link OBSERVATION_TYPES}.
+ *
+ * @see Requirements 8.3
+ */
+export type ObservationType = MemoryRecord['observation_type'];
 
 /**
  * Validate arbitrary input against {@link EventSchema}.

@@ -426,27 +426,31 @@ export function writeAgentConfigs(scope: InstallScope): void {
   // ── Agent 2: kiro-learn-compressor.json (extraction agent) ──
 
   const compressorPrompt =
-    'You are a memory extraction agent for kiro-learn. You receive event data from ' +
-    'agent sessions and extract structured memory records. You NEVER answer questions, ' +
-    'have conversations, or provide explanations. You ONLY output a single JSON object.\n' +
+    'You are a memory extraction agent for kiro-learn. Your ONLY job is to analyze tool-use observations and produce structured memory records.\n' +
     '\n' +
-    'CRITICAL: Your entire response must be a single valid JSON object. No text before it, ' +
-    'no text after it, no markdown fencing, no commentary. Just the JSON.\n' +
+    'You will receive tool observations wrapped in <tool_observation> XML. Respond with ONLY XML — no prose, no markdown, no explanation.\n' +
     '\n' +
-    'The input will be wrapped with metadata (Event ID, Kind, Namespace) followed by the ' +
-    'event body content between --- delimiters. Extract a memory record from this content.\n' +
+    'Return one or more <memory_record> blocks, or an empty response if the observation should be skipped.\n' +
     '\n' +
-    'Required JSON fields:\n' +
-    '- title: string, max 200 chars, concise summary of the key observation\n' +
-    '- summary: string, max 4000 chars, detailed description of what happened\n' +
-    '- facts: string[], discrete factual statements extracted from the content\n' +
-    '- concepts: string[], key concepts, technologies, or patterns mentioned\n' +
-    '- observation_type: one of "tool_use", "decision", "error", "discovery", "pattern"\n' +
-    '- files_touched: string[], file paths mentioned or modified (empty array if none)\n' +
+    '<memory_record type="tool_use | decision | error | discovery | pattern">\n' +
+    '  <title>Concise title (max 200 chars)</title>\n' +
+    '  <summary>What happened and why it matters</summary>\n' +
+    '  <facts>\n' +
+    '    <fact>Discrete factual statement</fact>\n' +
+    '  </facts>\n' +
+    '  <concepts>\n' +
+    '    <concept>technology-or-pattern</concept>\n' +
+    '  </concepts>\n' +
+    '  <files>\n' +
+    '    <file>path/to/file</file>\n' +
+    '  </files>\n' +
+    '</memory_record>\n' +
     '\n' +
-    'Example output:\n' +
-    '{"title":"User configured SQLite storage","summary":"The user set up...","facts":["..."],' +
-    '"concepts":["SQLite","storage"],"observation_type":"tool_use","files_touched":["src/db.ts"]}';
+    'Rules:\n' +
+    '- Never reply with prose. Non-XML text is discarded.\n' +
+    '- Empty response = skip this observation (valid).\n' +
+    '- Concrete debugging findings count as discoveries.\n' +
+    '- Focus on durable knowledge, not transient state.';
 
   const compressorConfig = {
     name: 'kiro-learn-compressor',

@@ -20,6 +20,7 @@ export {
   EventSchema,
   EventSourceSchema,
   MemoryRecordSchema,
+  OBSERVATION_TYPES,
   ULID_RE,
   RECORD_ID_RE,
   NAMESPACE_RE,
@@ -28,7 +29,7 @@ export {
   parseMemoryRecord,
 } from './schemas.js';
 
-export type { KiroMemEvent, MemoryRecord } from './schemas.js';
+export type { KiroMemEvent, MemoryRecord, ObservationType } from './schemas.js';
 
 /**
  * The discrete kinds of events a client may emit.

@@ -72,6 +72,9 @@ const RECORD_BASE: MemoryRecord = {
   facts: ['fact one', 'fact two'],
   source_event_ids: ['01JF8ZS4Y00000000000000000'],
   created_at: '2026-04-23T20:00:00Z',
+  concepts: ['typescript', 'testing'],
+  files_touched: ['src/types/schemas.ts'],
+  observation_type: 'tool_use',
 };
 
 /**

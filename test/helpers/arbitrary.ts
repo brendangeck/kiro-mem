@@ -292,6 +292,21 @@ export function arbitraryMemoryRecord(): fc.Arbitrary<MemoryRecord> {
     ),
     source_event_ids: fc.array(ulidArb(), { minLength: 1, maxLength: 5 }),
     created_at: isoDateArb(),
+    concepts: fc.array(
+      fc.string({ minLength: 1, maxLength: 100 }).filter((s) => s.length > 0),
+      { minLength: 0, maxLength: 10 },
+    ),
+    files_touched: fc.array(
+      fc.string({ minLength: 1, maxLength: 500 }).filter((s) => s.length > 0),
+      { minLength: 0, maxLength: 10 },
+    ),
+    observation_type: fc.constantFrom(
+      'tool_use' as const,
+      'decision' as const,
+      'error' as const,
+      'discovery' as const,
+      'pattern' as const,
+    ),
   });
 }
 

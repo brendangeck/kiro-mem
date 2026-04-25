@@ -1,8 +1,8 @@
 /**
- * Integration test: extraction pipeline with real kiro-cli.
+ * Integration test: extraction pipeline with real kiro-cli ACP.
  *
  * Requires:
- * - kiro-cli installed and on PATH
+ * - kiro-cli installed and on PATH with ACP support
  * - kiro-learn-compressor agent config at ~/.kiro/agents/kiro-learn-compressor.json
  * - Network access to Amazon Bedrock (via kiro-cli)
  *
@@ -10,23 +10,32 @@
  *
  * These tests are excluded from CI — they require a real kiro-cli installation
  * and Bedrock credentials. They verify the end-to-end extraction flow:
- * kiro-cli chat → ANSI stripping → JSON extraction → MemoryRecord validation.
+ * ACP session → XML framing → compressor agent → XML parsing → MemoryRecord validation.
+ *
+ * @see .kiro/specs/xml-extraction-pipeline/requirements.md § Requirements 1, 2, 4, 6
  */
 
-import { execSync, spawn } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { createAcpSession } from '../../src/collector/pipeline/acp-client.js';
+import { frameEvent } from '../../src/collector/pipeline/xml-framer.js';
+import {
+  parseMemoryXml,
+  isGarbageResponse,
+} from '../../src/collector/pipeline/xml-parser.js';
 import { parseMemoryRecord } from '../../src/types/schemas.js';
+import type { KiroMemEvent } from '../../src/types/schemas.js';
 
 // ── Precondition checks ─────────────────────────────────────────────────
 
-/** Check if kiro-cli is available. */
-function kiroCLiAvailable(): boolean {
+/** Check if kiro-cli is available and supports the `acp` subcommand. */
+function acpAvailable(): boolean {
   try {
-    execSync('kiro-cli --version', { stdio: 'ignore' });
+    execSync('kiro-cli acp --help', { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -40,155 +49,325 @@ function compressorConfigExists(): boolean {
   );
 }
 
-// ── Helper: spawn kiro-cli and capture output ───────────────────────────
-
-/**
- * Run `kiro-cli chat --no-interactive --agent kiro-learn-compressor` with
- * the given input content. Returns the raw stdout and stderr.
- */
-function runCompressor(
-  content: string,
-  timeoutMs = 60_000,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      'kiro-cli',
-      ['chat', '--no-interactive', '--wrap', 'never', '--agent', 'kiro-learn-compressor', content],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-
-    let stdout = '';
-    let stderr = '';
-    let killed = false;
-
-    const timer = setTimeout(() => {
-      killed = true;
-      child.kill('SIGTERM');
-      reject(new Error(`kiro-cli timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('error', (err: Error) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-
-    child.on('close', (code: number | null) => {
-      clearTimeout(timer);
-      if (killed) return;
-      resolve({ stdout, stderr, exitCode: code ?? 1 });
-    });
-  });
-}
-
-/**
- * Strip ANSI escape codes and extract the first JSON object from
- * kiro-cli chat output. Mirrors the logic in spawnKiroCli.
- */
-function extractJson(raw: string): unknown {
-  // eslint-disable-next-line no-control-regex
-  const clean = raw.replace(/\x1b\[[0-9;]*m/g, '');
-  const match = clean.match(/\{[\s\S]*\}/);
-  if (!match) {
-    throw new Error(`No JSON object found in output:\n${clean.slice(0, 500)}`);
-  }
-  return JSON.parse(match[0]) as unknown;
-}
-
 // ── Tests ───────────────────────────────────────────────────────────────
 
-const canRun = kiroCLiAvailable() && compressorConfigExists();
+const canRun = acpAvailable() && compressorConfigExists();
 
 describe.skipIf(!canRun)(
-  'Extraction pipeline — kiro-cli integration',
+  'Extraction pipeline — ACP + XML integration',
   () => {
-    // Sample event content that simulates a real tool_use event
-    const sampleContent = JSON.stringify({
-      tool_name: 'fs_read',
-      tool_input: { path: 'src/installer/index.ts' },
-      tool_response: {
-        success: true,
-        result:
-          'The file contains the installer module with functions for init, start, stop, status, and uninstall commands.',
+    // Sample event that simulates a real tool_use event
+    const sampleEvent: KiroMemEvent = {
+      event_id: '01JF8ZS4Y00000000000000000',
+      session_id: 'sess-integ-1',
+      actor_id: 'integ-test',
+      namespace: '/actor/integ-test/project/test/',
+      schema_version: 1,
+      kind: 'tool_use',
+      body: {
+        type: 'json',
+        data: {
+          tool_name: 'fs_read',
+          tool_input: { path: 'src/installer/index.ts' },
+          tool_response: {
+            success: true,
+            result:
+              'The file contains the installer module with functions for init, start, stop, status, and uninstall commands.',
+          },
+        },
       },
+      valid_time: '2026-04-23T20:00:00Z',
+      source: {
+        surface: 'kiro-cli',
+        version: '0.1.0',
+        client_id: 'integ-test-client',
+      },
+    };
+
+    // Sample event with text body (prompt kind)
+    const textEvent: KiroMemEvent = {
+      event_id: '01JF8ZS4Y00000000000000001',
+      session_id: 'sess-integ-1',
+      actor_id: 'integ-test',
+      namespace: '/actor/integ-test/project/test/',
+      schema_version: 1,
+      kind: 'prompt',
+      body: {
+        type: 'text',
+        content:
+          'The user asked how to configure the collector port.',
+      },
+      valid_time: '2026-04-23T20:01:00Z',
+      source: {
+        surface: 'kiro-cli',
+        version: '0.1.0',
+        client_id: 'integ-test-client',
+      },
+    };
+
+    // Sample session_summary event with message body
+    const sessionSummaryEvent: KiroMemEvent = {
+      event_id: '01JF8ZS4Y00000000000000002',
+      session_id: 'sess-integ-1',
+      actor_id: 'integ-test',
+      namespace: '/actor/integ-test/project/test/',
+      schema_version: 1,
+      kind: 'session_summary',
+      body: {
+        type: 'message',
+        turns: [
+          { role: 'user', content: 'Set up the SQLite storage backend with FTS5 indexing.' },
+          { role: 'assistant', content: 'I created the SQLite storage module with FTS5 full-text search. The schema includes events and memory_records tables with an FTS5 virtual table for search.' },
+          { role: 'user', content: 'Add migration support so we can evolve the schema.' },
+          { role: 'assistant', content: 'Done. Added a migrations runner with version tracking in a _migrations table. The first migration creates the initial schema.' },
+        ],
+      },
+      valid_time: '2026-04-23T20:30:00Z',
+      source: {
+        surface: 'kiro-cli',
+        version: '0.1.0',
+        client_id: 'integ-test-client',
+      },
+    };
+
+    // Sample note event with text body
+    const noteEvent: KiroMemEvent = {
+      event_id: '01JF8ZS4Y00000000000000003',
+      session_id: 'sess-integ-1',
+      actor_id: 'integ-test',
+      namespace: '/actor/integ-test/project/test/',
+      schema_version: 1,
+      kind: 'note',
+      body: {
+        type: 'text',
+        content:
+          'The team decided to use ULID for all identifiers instead of UUIDv4. ULIDs are lexicographically sortable by timestamp, which gives us natural ordering in SQLite without an extra index on created_at.',
+      },
+      valid_time: '2026-04-23T21:00:00Z',
+      source: {
+        surface: 'kiro-cli',
+        version: '0.1.0',
+        client_id: 'integ-test-client',
+      },
+    };
+
+    // Sample prompt event with message body (multi-turn conversation)
+    const messagePromptEvent: KiroMemEvent = {
+      event_id: '01JF8ZS4Y00000000000000004',
+      session_id: 'sess-integ-1',
+      actor_id: 'integ-test',
+      namespace: '/actor/integ-test/project/test/',
+      schema_version: 1,
+      kind: 'prompt',
+      body: {
+        type: 'message',
+        turns: [
+          { role: 'user', content: 'Why is the dedup stage using a Map instead of a Set?' },
+          { role: 'assistant', content: 'Map preserves insertion order, so eviction of the oldest entry is O(1) via map.keys().next(). A Set would also work but Map gives us the LRU eviction pattern for free.' },
+        ],
+      },
+      valid_time: '2026-04-23T20:15:00Z',
+      source: {
+        surface: 'kiro-cli',
+        version: '0.1.0',
+        client_id: 'integ-test-client',
+      },
+    };
+
+    it('frameEvent produces well-formed XML from a tool_use event', () => {
+      const xml = frameEvent(sampleEvent);
+      expect(xml).toMatch(/^<tool_observation>/);
+      expect(xml).toMatch(/<\/tool_observation>$/);
+      expect(xml).toContain('<tool_name>fs_read</tool_name>');
+      expect(xml).toContain('<timestamp>');
+      expect(xml).toContain('<input>');
+      expect(xml).toContain('<output>');
     });
 
-    it('kiro-cli chat exits with code 0', async () => {
-      const result = await runCompressor(sampleContent);
-      expect(result.exitCode).toBe(0);
-    }, 60_000);
+    it('ACP session completes handshake and returns a response', async () => {
+      const xml = frameEvent(sampleEvent);
+      const session = await createAcpSession({
+        agentName: 'kiro-learn-compressor',
+        timeoutMs: 60_000,
+      });
 
-    it('output contains a JSON object after ANSI stripping', async () => {
-      const result = await runCompressor(sampleContent);
-      expect(result.exitCode).toBe(0);
+      try {
+        const response = await session.sendPrompt(xml);
+        expect(typeof response).toBe('string');
+        // Response should be non-empty (either XML records or empty skip)
+        // We just verify we got a string back without timeout
+      } finally {
+        session.destroy();
+      }
+    }, 90_000);
 
-      const json = extractJson(result.stdout);
-      expect(json).toBeDefined();
-      expect(typeof json).toBe('object');
-    }, 60_000);
+    it('compressor response parses as XML memory records', async () => {
+      const xml = frameEvent(sampleEvent);
+      const session = await createAcpSession({
+        agentName: 'kiro-learn-compressor',
+        timeoutMs: 60_000,
+      });
 
-    it('extracted JSON has the expected compressor fields', async () => {
-      const result = await runCompressor(sampleContent);
-      expect(result.exitCode).toBe(0);
+      let response: string;
+      try {
+        response = await session.sendPrompt(xml);
+      } finally {
+        session.destroy();
+      }
 
-      const json = extractJson(result.stdout) as Record<string, unknown>;
+      // Empty response is a valid skip — not an error
+      if (!response.trim()) {
+        return;
+      }
 
-      // The compressor prompt asks for these fields
-      expect(json).toHaveProperty('title');
-      expect(json).toHaveProperty('summary');
-      expect(json).toHaveProperty('facts');
-      expect(json).toHaveProperty('observation_type');
-      expect(json).toHaveProperty('files_touched');
+      // If non-empty, it should not be garbage
+      expect(isGarbageResponse(response)).toBe(false);
 
-      // Type checks
-      expect(typeof json['title']).toBe('string');
-      expect(typeof json['summary']).toBe('string');
-      expect(Array.isArray(json['facts'])).toBe(true);
-      expect(typeof json['observation_type']).toBe('string');
-      expect(Array.isArray(json['files_touched'])).toBe(true);
-    }, 60_000);
+      const records = parseMemoryXml(response);
+      expect(records.length).toBeGreaterThan(0);
 
-    it('enriched output passes parseMemoryRecord validation', async () => {
-      const result = await runCompressor(sampleContent);
-      expect(result.exitCode).toBe(0);
+      for (const record of records) {
+        expect(record.title.length).toBeGreaterThan(0);
+        expect(record.title.length).toBeLessThanOrEqual(200);
+        expect(record.summary.length).toBeGreaterThan(0);
+        expect(record.summary.length).toBeLessThanOrEqual(4000);
+        expect([
+          'tool_use',
+          'decision',
+          'error',
+          'discovery',
+          'pattern',
+        ]).toContain(record.type);
+        expect(Array.isArray(record.facts)).toBe(true);
+        expect(Array.isArray(record.concepts)).toBe(true);
+        expect(Array.isArray(record.files)).toBe(true);
+      }
+    }, 90_000);
 
-      const json = extractJson(result.stdout) as Record<string, unknown>;
+    it('enriched records pass parseMemoryRecord validation', async () => {
+      const xml = frameEvent(sampleEvent);
+      const session = await createAcpSession({
+        agentName: 'kiro-learn-compressor',
+        timeoutMs: 60_000,
+      });
 
-      // Enrich with the fields that runExtraction adds
-      // (these aren't in the compressor output — the pipeline adds them)
-      const enriched = {
-        ...json,
-        record_id: 'mr_00000000000000000000000000',
-        namespace: '/actor/test/project/test/',
-        strategy: 'llm-summary',
-        source_event_ids: ['00000000000000000000000000'],
-        created_at: new Date().toISOString(),
-      };
+      let response: string;
+      try {
+        response = await session.sendPrompt(xml);
+      } finally {
+        session.destroy();
+      }
 
-      // This should not throw — the enriched record must be schema-valid
-      const record = parseMemoryRecord(enriched);
+      // Empty response is a valid skip
+      if (!response.trim()) {
+        return;
+      }
 
-      expect(record.title.length).toBeGreaterThan(0);
-      expect(record.title.length).toBeLessThanOrEqual(200);
-      expect(record.summary.length).toBeGreaterThan(0);
-      expect(record.summary.length).toBeLessThanOrEqual(4000);
-      expect(record.strategy).toBe('llm-summary');
-    }, 60_000);
+      const records = parseMemoryXml(response);
+      expect(records.length).toBeGreaterThan(0);
 
-    it('handles text body content', async () => {
-      const textContent = 'The user asked how to configure the collector port.';
-      const result = await runCompressor(textContent);
-      expect(result.exitCode).toBe(0);
+      // Enrich each record with pipeline-managed fields and validate
+      for (let i = 0; i < records.length; i++) {
+        const raw = records[i]!;
+        const enriched = {
+          record_id: 'mr_00000000000000000000000000',
+          namespace: '/actor/integ-test/project/test/',
+          strategy: 'llm-summary',
+          source_event_ids: ['01JF8ZS4Y00000000000000000'],
+          created_at: new Date().toISOString(),
+          title: raw.title,
+          summary: raw.summary,
+          facts: raw.facts,
+          concepts: raw.concepts,
+          files_touched: raw.files,
+          observation_type: raw.type,
+        };
 
-      const json = extractJson(result.stdout) as Record<string, unknown>;
-      expect(json).toHaveProperty('title');
-      expect(json).toHaveProperty('summary');
-    }, 60_000);
+        // This should not throw — the enriched record must be schema-valid
+        const record = parseMemoryRecord(enriched);
+
+        expect(record.title.length).toBeGreaterThan(0);
+        expect(record.title.length).toBeLessThanOrEqual(200);
+        expect(record.summary.length).toBeGreaterThan(0);
+        expect(record.summary.length).toBeLessThanOrEqual(4000);
+        expect(record.strategy).toBe('llm-summary');
+        expect(record.concepts).toBeDefined();
+        expect(record.files_touched).toBeDefined();
+        expect(record.observation_type).toBeDefined();
+      }
+    }, 90_000);
+
+    /**
+     * Helper: send an event through ACP and validate the response.
+     * Accepts either an empty skip or well-formed XML memory records.
+     */
+    async function sendAndValidate(event: KiroMemEvent): Promise<void> {
+      const xml = frameEvent(event);
+      const session = await createAcpSession({
+        agentName: 'kiro-learn-compressor',
+        timeoutMs: 60_000,
+      });
+
+      let response: string;
+      try {
+        response = await session.sendPrompt(xml);
+      } finally {
+        session.destroy();
+      }
+
+      // Empty response is a valid skip
+      if (!response.trim()) {
+        return;
+      }
+
+      // Non-empty response should not be garbage
+      expect(isGarbageResponse(response)).toBe(false);
+
+      const records = parseMemoryXml(response);
+      for (const record of records) {
+        expect(record.title.length).toBeGreaterThan(0);
+        expect(record.title.length).toBeLessThanOrEqual(200);
+        expect(record.summary.length).toBeGreaterThan(0);
+        expect(record.summary.length).toBeLessThanOrEqual(4000);
+        expect([
+          'tool_use',
+          'decision',
+          'error',
+          'discovery',
+          'pattern',
+        ]).toContain(record.type);
+      }
+    }
+
+    it('handles text body content via ACP (prompt kind)', async () => {
+      await sendAndValidate(textEvent);
+    }, 90_000);
+
+    it('handles session_summary event with message body via ACP', async () => {
+      const xml = frameEvent(sessionSummaryEvent);
+      // Message body concatenates turns as input
+      expect(xml).toContain('<tool_name>unknown</tool_name>');
+      expect(xml).toContain('user:');
+      expect(xml).toContain('assistant:');
+
+      await sendAndValidate(sessionSummaryEvent);
+    }, 90_000);
+
+    it('handles note event with text body via ACP', async () => {
+      const xml = frameEvent(noteEvent);
+      expect(xml).toContain('<tool_name>unknown</tool_name>');
+      expect(xml).toContain('ULID');
+
+      await sendAndValidate(noteEvent);
+    }, 90_000);
+
+    it('handles prompt event with message body via ACP', async () => {
+      const xml = frameEvent(messagePromptEvent);
+      expect(xml).toContain('<tool_name>unknown</tool_name>');
+      expect(xml).toContain('user:');
+      expect(xml).toContain('assistant:');
+
+      await sendAndValidate(messagePromptEvent);
+    }, 90_000);
   },
 );

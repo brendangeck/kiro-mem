@@ -315,5 +315,11 @@ function rowToMemoryRecord(row: MemoryRecordRow): MemoryRecord {
     facts: JSON.parse(row.facts_json) as string[],
     source_event_ids: JSON.parse(row.source_event_ids_json) as string[],
     created_at: row.created_at,
+    // New required fields from XML extraction pipeline. The SQLite schema
+    // does not yet have dedicated columns for these; a future migration
+    // will add them. Until then, default to empty arrays and 'tool_use'.
+    concepts: [],
+    files_touched: [],
+    observation_type: 'tool_use',
   };
 }

@@ -281,6 +281,9 @@ describe('SQLite backend — property: namespace isolation on search (P3, task 6
                 facts: ['shared fact'],
                 source_event_ids: ['01JF8ZS4Y00000000000000000'],
                 created_at: '2026-04-23T20:00:00Z',
+                concepts: ['testing'],
+                files_touched: ['src/index.ts'],
+                observation_type: 'tool_use',
               };
               const r2: MemoryRecord = {
                 record_id: makeRecordId(i * 2 + 1),
@@ -291,6 +294,9 @@ describe('SQLite backend — property: namespace isolation on search (P3, task 6
                 facts: ['shared fact'],
                 source_event_ids: ['01JF8ZS4Y00000000000000000'],
                 created_at: '2026-04-23T20:00:00Z',
+                concepts: ['testing'],
+                files_touched: ['src/index.ts'],
+                observation_type: 'tool_use',
               };
               await s.storage.putMemoryRecord(r1);
               await s.storage.putMemoryRecord(r2);
@@ -355,6 +361,9 @@ describe('SQLite backend — property: searchMemoryRecords honours limit (task 6
               facts: ['widget'],
               source_event_ids: ['01JF8ZS4Y00000000000000000'],
               created_at: '2026-04-23T20:00:00Z',
+              concepts: ['testing'],
+              files_touched: ['src/index.ts'],
+              observation_type: 'tool_use',
             });
           }
 
@@ -555,6 +564,9 @@ describe('SQLite backend — property: searchMemoryRecords never throws (task 6.
             facts: ['anchor'],
             source_event_ids: ['01JF8ZS4Y00000000000000000'],
             created_at: '2026-04-23T20:00:00Z',
+            concepts: ['testing'],
+            files_touched: ['src/index.ts'],
+            observation_type: 'tool_use',
           });
 
           const hits = await s.storage.searchMemoryRecords({
