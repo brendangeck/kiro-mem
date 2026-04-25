@@ -330,19 +330,36 @@ export function createPrivacyScrubStage(): PipelineProcessor {
 // ── Extraction stage ────────────────────────────────────────────────────
 
 /**
- * Extract the body content from an event as a string suitable for passing
- * to `kiro-cli` via stdin.
+ * Extract the body content from an event and wrap it with extraction
+ * context so the compressor agent treats it as event data to extract
+ * from, not a question to answer.
  */
 function extractBodyContent(event: KiroMemEvent): string {
   const body = event.body;
+  let content: string;
   switch (body.type) {
     case 'text':
-      return body.content;
+      content = body.content;
+      break;
     case 'message':
-      return body.turns.map((t) => `${t.role}: ${t.content}`).join('\n');
+      content = body.turns.map((t) => `${t.role}: ${t.content}`).join('\n');
+      break;
     case 'json':
-      return JSON.stringify(body.data);
+      content = JSON.stringify(body.data);
+      break;
   }
+
+  // Wrap with framing so the model extracts rather than answers
+  return (
+    `Extract a memory record from the following ${event.kind} event.\n` +
+    `Event ID: ${event.event_id}\n` +
+    `Kind: ${event.kind}\n` +
+    `Namespace: ${event.namespace}\n` +
+    `---\n` +
+    content +
+    `\n---\n` +
+    `Respond with ONLY the JSON object.`
+  );
 }
 
 /**
@@ -363,6 +380,7 @@ function spawnKiroCli(
     const child = spawn('kiro-cli', [
       'chat',
       '--no-interactive',
+      '--wrap', 'never',
       '--agent',
       'kiro-learn-compressor',
       content,

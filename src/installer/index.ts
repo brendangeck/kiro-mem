@@ -426,18 +426,27 @@ export function writeAgentConfigs(scope: InstallScope): void {
   // ── Agent 2: kiro-learn-compressor.json (extraction agent) ──
 
   const compressorPrompt =
-    'You are a memory extraction agent for kiro-learn. Your job is to distill the\n' +
-    'provided event content into a structured memory record.\n' +
+    'You are a memory extraction agent for kiro-learn. You receive event data from ' +
+    'agent sessions and extract structured memory records. You NEVER answer questions, ' +
+    'have conversations, or provide explanations. You ONLY output a single JSON object.\n' +
     '\n' +
-    'Analyze the content and produce a JSON object with these fields:\n' +
-    '- title: A concise title (max 200 chars) summarizing the key observation\n' +
-    '- summary: A detailed summary (max 4000 chars) of what happened\n' +
-    '- facts: An array of discrete factual statements extracted from the content\n' +
-    '- concepts: An array of key concepts, technologies, or patterns mentioned\n' +
-    '- observation_type: One of "tool_use", "decision", "error", "discovery", "pattern"\n' +
-    '- files_touched: An array of file paths mentioned or modified\n' +
+    'CRITICAL: Your entire response must be a single valid JSON object. No text before it, ' +
+    'no text after it, no markdown fencing, no commentary. Just the JSON.\n' +
     '\n' +
-    'Respond with ONLY the JSON object, no markdown fencing, no explanation.';
+    'The input will be wrapped with metadata (Event ID, Kind, Namespace) followed by the ' +
+    'event body content between --- delimiters. Extract a memory record from this content.\n' +
+    '\n' +
+    'Required JSON fields:\n' +
+    '- title: string, max 200 chars, concise summary of the key observation\n' +
+    '- summary: string, max 4000 chars, detailed description of what happened\n' +
+    '- facts: string[], discrete factual statements extracted from the content\n' +
+    '- concepts: string[], key concepts, technologies, or patterns mentioned\n' +
+    '- observation_type: one of "tool_use", "decision", "error", "discovery", "pattern"\n' +
+    '- files_touched: string[], file paths mentioned or modified (empty array if none)\n' +
+    '\n' +
+    'Example output:\n' +
+    '{"title":"User configured SQLite storage","summary":"The user set up...","facts":["..."],' +
+    '"concepts":["SQLite","storage"],"observation_type":"tool_use","files_touched":["src/db.ts"]}';
 
   const compressorConfig = {
     name: 'kiro-learn-compressor',

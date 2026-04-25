@@ -53,7 +53,7 @@ function runCompressor(
   return new Promise((resolve, reject) => {
     const child = spawn(
       'kiro-cli',
-      ['chat', '--no-interactive', '--agent', 'kiro-learn-compressor', content],
+      ['chat', '--no-interactive', '--wrap', 'never', '--agent', 'kiro-learn-compressor', content],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
 
