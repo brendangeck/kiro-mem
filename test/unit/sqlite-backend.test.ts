@@ -32,6 +32,7 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { openSqliteStorage } from '../../src/collector/storage/sqlite/index.js';
+import { MIGRATIONS } from '../../src/collector/storage/sqlite/migrations/index.js';
 import type { StorageBackend } from '../../src/types/index.js';
 
 import { makeValidEvent, makeValidRecord } from '../helpers/fixtures.js';
@@ -288,13 +289,15 @@ describe('SQLite backend — persistence across close + reopen (task 5.12)', () 
     // Cross-check `_migrations` via a throwaway readonly handle. Opening
     // a second writer on the same file while `storage` is active would
     // work (SQLite allows it in WAL mode), but `readonly: true` makes
-    // the intent explicit and cannot accidentally mutate state.
+    // the intent explicit and cannot accidentally mutate state. We
+    // assert against MIGRATIONS.length so this test is resilient as
+    // new migrations are appended.
     const probe = new Database(dbPath, { readonly: true });
     try {
       const { count } = probe
         .prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM _migrations')
         .get()!;
-      expect(count).toBe(1);
+      expect(count).toBe(MIGRATIONS.length);
     } finally {
       probe.close();
     }

@@ -14,6 +14,7 @@
 
 import fc from 'fast-check';
 
+import { OBSERVATION_TYPES } from '../../src/types/schemas.js';
 import type { KiroMemEvent, MemoryRecord } from '../../src/types/schemas.js';
 
 /** Crockford base32 alphabet used in ULIDs (no I, L, O, U). */
@@ -292,6 +293,15 @@ export function arbitraryMemoryRecord(): fc.Arbitrary<MemoryRecord> {
     ),
     source_event_ids: fc.array(ulidArb(), { minLength: 1, maxLength: 5 }),
     created_at: isoDateArb(),
+    concepts: fc.array(
+      fc.string({ minLength: 1, maxLength: 100 }).filter((s) => s.length > 0),
+      { minLength: 0, maxLength: 10 },
+    ),
+    files_touched: fc.array(
+      fc.string({ minLength: 1, maxLength: 500 }).filter((s) => s.length > 0),
+      { minLength: 0, maxLength: 10 },
+    ),
+    observation_type: fc.constantFrom(...OBSERVATION_TYPES),
   });
 }
 

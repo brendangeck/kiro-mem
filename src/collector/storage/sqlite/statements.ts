@@ -102,10 +102,14 @@ export interface EventRow {
 
 /**
  * Raw row shape returned by any `SELECT` against the `memory_records`
- * table that lists every column in the order declared in migration 0001.
+ * table that lists every column in the order declared in migrations 0001
+ * and 0002.
  *
- * `facts_json` and `source_event_ids_json` are JSON-encoded TEXT columns
- * that the backend decodes into `string[]` arrays on read.
+ * `facts_json`, `source_event_ids_json`, `concepts_json`, and
+ * `files_touched_json` are JSON-encoded TEXT columns that the backend
+ * decodes into `string[]` arrays on read. `observation_type` is a
+ * TEXT column constrained by a `CHECK` to one of five enum values; see
+ * migration 0002.
  *
  * @see Requirements 8.1, 8.3, 8.4
  */
@@ -118,6 +122,9 @@ export interface MemoryRecordRow {
   facts_json: string;
   source_event_ids_json: string;
   created_at: string;
+  concepts_json: string;
+  files_touched_json: string;
+  observation_type: string;
 }
 
 /**
@@ -155,8 +162,8 @@ type InsertEventParams = [
 
 /**
  * Positional parameters bound to {@link Statements.insertMemoryRecord}, in
- * SQL order. Matches the column list in migration 0001's `memory_records`
- * table (the primary row; the FTS row is written by a separate statement).
+ * SQL order. Matches the column list in migrations 0001 + 0002 (the
+ * primary row; the FTS row is written by a separate statement).
  */
 type InsertMemoryRecordParams = [
   recordId: string,
@@ -167,6 +174,9 @@ type InsertMemoryRecordParams = [
   factsJson: string,
   sourceEventIdsJson: string,
   createdAt: string,
+  conceptsJson: string,
+  filesTouchedJson: string,
+  observationType: string,
 ];
 
 /**
@@ -369,8 +379,9 @@ export function prepareStatements(db: Database): Statements {
   const insertMemoryRecord = db.prepare<InsertMemoryRecordParams>(
     `INSERT INTO memory_records (
        record_id, namespace, strategy, title, summary,
-       facts_json, source_event_ids_json, created_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       facts_json, source_event_ids_json, created_at,
+       concepts_json, files_touched_json, observation_type
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   // Companion FTS5 row insert. `record_id` + `namespace` are UNINDEXED in
@@ -399,7 +410,8 @@ export function prepareStatements(db: Database): Statements {
   >(
     `SELECT
        mr.record_id, mr.namespace, mr.strategy, mr.title, mr.summary,
-       mr.facts_json, mr.source_event_ids_json, mr.created_at
+       mr.facts_json, mr.source_event_ids_json, mr.created_at,
+       mr.concepts_json, mr.files_touched_json, mr.observation_type
      FROM memory_records_fts fts
      JOIN memory_records mr ON mr.record_id = fts.record_id
      WHERE memory_records_fts MATCH ?
@@ -418,7 +430,8 @@ export function prepareStatements(db: Database): Statements {
   const selectMemoryRecordsLike = db.prepare<SelectMemoryRecordsLikeParams, MemoryRecordRow>(
     `SELECT
        record_id, namespace, strategy, title, summary,
-       facts_json, source_event_ids_json, created_at
+       facts_json, source_event_ids_json, created_at,
+       concepts_json, files_touched_json, observation_type
      FROM memory_records
      WHERE namespace LIKE ? || '%'
        AND (title LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\')

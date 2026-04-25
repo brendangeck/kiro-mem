@@ -86,19 +86,25 @@ describe('runMigrations — happy path', () => {
     expect(row?.sql).toContain('porter unicode61 remove_diacritics 2');
   });
 
-  it('records migration 0001_init in _migrations with an ISO applied_at (Requirement 9.1)', () => {
+  it('records applied migrations in _migrations with ISO applied_at timestamps (Requirement 9.1)', () => {
     const rows = db
       .prepare<[], { version: number; name: string; applied_at: string }>(
         'SELECT version, name, applied_at FROM _migrations ORDER BY version',
       )
       .all();
 
-    expect(rows).toHaveLength(1);
-    const row = rows[0]!;
-    expect(row.version).toBe(1);
-    expect(row.name).toBe('0001_init');
-    expect(typeof row.applied_at).toBe('string');
-    expect(Number.isFinite(new Date(row.applied_at).getTime())).toBe(true);
+    // There should be one row per migration in MIGRATIONS, in the same
+    // order. Using MIGRATIONS.length keeps this test resilient as new
+    // migrations are appended.
+    expect(rows).toHaveLength(MIGRATIONS.length);
+    for (let i = 0; i < MIGRATIONS.length; i++) {
+      const expected = MIGRATIONS[i]!;
+      const row = rows[i]!;
+      expect(row.version).toBe(expected.version);
+      expect(row.name).toBe(expected.name);
+      expect(typeof row.applied_at).toBe('string');
+      expect(Number.isFinite(new Date(row.applied_at).getTime())).toBe(true);
+    }
   });
 
   it('is a no-op when re-invoked with the same migration list (Requirement 9.2)', () => {
@@ -108,6 +114,6 @@ describe('runMigrations — happy path', () => {
       .prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM _migrations')
       .get()!;
 
-    expect(count).toBe(1);
+    expect(count).toBe(MIGRATIONS.length);
   });
 });

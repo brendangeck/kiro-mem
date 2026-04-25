@@ -267,6 +267,7 @@ export function writePackageJson(): void {
     private: true,
     type: 'module',
     dependencies: {
+      '@agentclientprotocol/sdk': '0.20.0',
       'better-sqlite3': '12.0.0',
       ulidx: '2.4.1',
       zod: '3.23.0',
@@ -426,18 +427,43 @@ export function writeAgentConfigs(scope: InstallScope): void {
   // ── Agent 2: kiro-learn-compressor.json (extraction agent) ──
 
   const compressorPrompt =
-    'You are a memory extraction agent for kiro-learn. Your job is to distill the\n' +
-    'provided event content into a structured memory record.\n' +
+    'You are a memory extraction agent for kiro-learn. Your ONLY job is to analyze tool-use observations and produce structured memory records.\n' +
     '\n' +
-    'Analyze the content and produce a JSON object with these fields:\n' +
-    '- title: A concise title (max 200 chars) summarizing the key observation\n' +
-    '- summary: A detailed summary (max 4000 chars) of what happened\n' +
-    '- facts: An array of discrete factual statements extracted from the content\n' +
-    '- concepts: An array of key concepts, technologies, or patterns mentioned\n' +
-    '- observation_type: One of "tool_use", "decision", "error", "discovery", "pattern"\n' +
-    '- files_touched: An array of file paths mentioned or modified\n' +
+    'You will receive tool observations wrapped in <tool_observation> XML. Respond with ONLY XML — no prose, no markdown, no explanation.\n' +
     '\n' +
-    'Respond with ONLY the JSON object, no markdown fencing, no explanation.';
+    'Return one or more <memory_record> blocks, or signal skip by returning either:\n' +
+    '  - an empty response, or\n' +
+    '  - a single `<skip/>` tag (optionally with a `reason` attribute, e.g. `<skip reason="trivial observation"/>`).\n' +
+    '\n' +
+    'The `type` attribute MUST be exactly one of: tool_use, decision, error, discovery, pattern.\n' +
+    'Pick a single value — never emit the literal pipe-delimited list below.\n' +
+    '\n' +
+    '<memory_record type="TYPE">\n' +
+    '  <title>Concise title (max 200 chars)</title>\n' +
+    '  <summary>What happened and why it matters</summary>\n' +
+    '  <facts>\n' +
+    '    <fact>Discrete factual statement</fact>\n' +
+    '  </facts>\n' +
+    '  <concepts>\n' +
+    '    <concept>technology-or-pattern</concept>\n' +
+    '  </concepts>\n' +
+    '  <files>\n' +
+    '    <file>path/to/file</file>\n' +
+    '  </files>\n' +
+    '</memory_record>\n' +
+    '\n' +
+    'Concrete examples:\n' +
+    '- type="tool_use" — a file read, write, or command invocation happened.\n' +
+    '- type="decision" — a design or architectural choice was made.\n' +
+    '- type="error" — a failure or bug was encountered.\n' +
+    '- type="discovery" — a concrete debugging finding or learned fact.\n' +
+    '- type="pattern" — a recurring approach or convention.\n' +
+    '\n' +
+    'Rules:\n' +
+    '- Never reply with prose. Non-XML text is discarded.\n' +
+    '- Valid skip signals: an empty response OR a single `<skip/>` tag.\n' +
+    '- Concrete debugging findings count as discoveries.\n' +
+    '- Focus on durable knowledge, not transient state.';
 
   const compressorConfig = {
     name: 'kiro-learn-compressor',

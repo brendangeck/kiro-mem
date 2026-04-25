@@ -10,7 +10,7 @@
  * {@link createPipeline} into an ordered chain.
  */
 
-import { spawn } from 'node:child_process';
+import { ulid } from 'ulidx';
 
 import { parseMemoryRecord } from '../../types/index.js';
 import type {
@@ -18,6 +18,11 @@ import type {
   StorageBackend,
   EventIngestResponse,
 } from '../../types/index.js';
+import { createAcpSession } from './acp-client.js';
+import type { AcpSession } from './acp-client.js';
+import { frameEvent } from './xml-framer.js';
+import { parseMemoryXml, isGarbageResponse } from './xml-parser.js';
+import type { RawMemoryFields } from './xml-parser.js';
 
 // ── Stage result ────────────────────────────────────────────────────────
 
@@ -85,16 +90,18 @@ export interface PipelineOptions {
 /**
  * Configuration for {@link createExtractionStage}.
  *
- * @see Requirements 8.1, 9.1, 9.2, 9.3, 18.1, 18.3
+ * @see Requirements 6.7, 8.1, 9.1, 9.2, 9.3, 18.1, 18.3
  */
 export interface ExtractionStageOptions {
   storage: StorageBackend;
-  /** Maximum concurrent `kiro-cli` extraction processes. Default `2`. */
+  /** Maximum concurrent ACP extraction processes. Default `2`. */
   concurrency: number;
   /** Maximum queued extractions before oldest is dropped. Default `100`. */
   queueDepth: number;
   /** Per-extraction timeout in milliseconds. Default `30_000`. */
   timeoutMs: number;
+  /** Maximum retry attempts for garbage/transient failures. Default `3`. */
+  maxRetries?: number;
 }
 
 /**
@@ -330,96 +337,92 @@ export function createPrivacyScrubStage(): PipelineProcessor {
 // ── Extraction stage ────────────────────────────────────────────────────
 
 /**
- * Extract the body content from an event as a string suitable for passing
- * to `kiro-cli` via stdin.
- */
-function extractBodyContent(event: KiroMemEvent): string {
-  const body = event.body;
-  switch (body.type) {
-    case 'text':
-      return body.content;
-    case 'message':
-      return body.turns.map((t) => `${t.role}: ${t.content}`).join('\n');
-    case 'json':
-      return JSON.stringify(body.data);
-  }
-}
-
-/**
- * Spawn `kiro-cli` as a child process, pass event body via stdin, and
- * read the structured extraction result from stdout.
+ * Invoke the compressor agent via ACP + XML framing.
  *
- * Returns a promise that resolves with the parsed stdout JSON, or rejects
- * on timeout, non-zero exit, or spawn error.
+ * Frames the event as XML, creates an ACP session, sends the prompt,
+ * parses the XML response, and retries on garbage or transient errors
+ * up to `maxRetries` times. Each attempt creates and destroys its own
+ * ACP session.
  *
- * @see Requirements 18.1, 18.2, 18.3
+ * @see Requirements 6.1, 6.2, 6.3, 6.6, 6.8
  */
-function spawnKiroCli(
+export async function invokeCompressor(
   event: KiroMemEvent,
   timeoutMs: number,
-): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const content = extractBodyContent(event);
-    const child = spawn('kiro-cli', [
-      'chat',
-      '--no-interactive',
-      '--agent',
-      'kiro-learn-compressor',
-      content,
-    ], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+  maxRetries: number,
+): Promise<RawMemoryFields[]> {
+  const xmlPayload = frameEvent(event);
+  let lastError: Error | null = null;
 
-    let stdout = '';
-    let stderr = '';
-    let killed = false;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    let session: AcpSession | null = null;
+    try {
+      session = await createAcpSession({
+        agentName: 'kiro-learn-compressor',
+        timeoutMs,
+      });
 
-    const timer = setTimeout(() => {
-      killed = true;
-      child.kill('SIGTERM');
-      reject(new Error(`kiro-cli timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
+      const responseText = await session.sendPrompt(xmlPayload);
 
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
+      // Empty response = valid skip (compressor intentionally declined
+      // to emit a record). Return [] so the outer loop does nothing.
+      if (!responseText.trim()) {
+        return [];
+      }
 
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
+      // Explicit skip token — the compressor may emit `<skip/>` (or a
+      // `<skip ...>` variant) instead of an empty body. Treat the same
+      // as an empty response.
+      if (/<skip\b/.test(responseText)) {
+        return [];
+      }
 
-    child.on('error', (err: Error) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-
-    child.on('close', (code: number | null) => {
-      clearTimeout(timer);
-      if (killed) return; // already rejected by timeout
-      if (code !== 0) {
-        reject(
-          new Error(
-            `kiro-cli exited with code ${code}${stderr ? ': ' + stderr.trim() : ''}`,
-          ),
+      // Check for garbage (conversational response). isGarbageResponse
+      // returns true only for non-empty text that contains neither
+      // `<memory_record` nor `<skip` — so reaching this branch means
+      // the model produced prose instead of structured XML.
+      if (isGarbageResponse(responseText)) {
+        lastError = new Error(
+          `compressor returned non-XML response (attempt ${String(attempt + 1)}/${String(maxRetries)})`,
         );
-        return;
+        console.warn(
+          `extraction garbage detected for event ${event.event_id}: ${lastError.message}`,
+        );
+        continue;
       }
-      try {
-        // kiro-cli chat output includes ANSI escape codes and a "> " prefix.
-        // Strip ANSI codes, then extract the first JSON object from the output.
-        // eslint-disable-next-line no-control-regex
-        const clean = stdout.replace(/\x1b\[[0-9;]*m/g, '');
-        const jsonMatch = clean.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          reject(new Error('kiro-cli returned no JSON object in output'));
-          return;
-        }
-        resolve(JSON.parse(jsonMatch[0]));
-      } catch {
-        reject(new Error('kiro-cli returned invalid JSON'));
+
+      const records = parseMemoryXml(responseText);
+
+      // The response contained `<memory_record` markers (otherwise
+      // isGarbageResponse above would have returned true) but the
+      // parser extracted zero valid records. This means every block
+      // failed validation — invalid `type` attribute, missing/empty
+      // `title` or `summary`, or malformed/truncated XML. Returning []
+      // here would silently drop what the model clearly intended to be
+      // output; instead we treat it as a retryable failure so the
+      // circuit breaker gets a chance to try again.
+      if (records.length === 0) {
+        lastError = new Error(
+          `compressor returned <memory_record> markers but no parseable records (attempt ${String(attempt + 1)}/${String(maxRetries)})`,
+        );
+        console.warn(
+          `extraction produced no valid records for event ${event.event_id}: ${lastError.message}`,
+        );
+        continue;
       }
-    });
-  });
+
+      return records;
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.warn(
+        `extraction attempt ${String(attempt + 1)}/${String(maxRetries)} failed for event ${event.event_id}: ${lastError.message}`,
+      );
+    } finally {
+      session?.destroy();
+    }
+  }
+
+  throw lastError ?? new Error('extraction failed after all retries');
 }
 
 /**
@@ -429,12 +432,13 @@ function spawnKiroCli(
  * extractions run in parallel. When the queue overflows, the oldest
  * pending event is dropped with a warning.
  *
- * @see Requirements 8.1–8.8, 9.1–9.3, 18.1–18.4
+ * @see Requirements 6.1–6.8, 8.1–8.8, 9.1–9.3
  */
 export function createExtractionStage(
   opts: ExtractionStageOptions,
 ): ExtractionStage {
   const { storage, concurrency, queueDepth, timeoutMs } = opts;
+  const maxRetries = opts.maxRetries ?? 3;
 
   if (!Number.isInteger(concurrency) || concurrency <= 0) {
     throw new RangeError('concurrency must be a positive integer');
@@ -444,6 +448,9 @@ export function createExtractionStage(
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
     throw new RangeError('timeoutMs must be a positive integer');
+  }
+  if (!Number.isInteger(maxRetries) || maxRetries <= 0) {
+    throw new RangeError('maxRetries must be a positive integer');
   }
 
   let active = 0;
@@ -463,19 +470,29 @@ export function createExtractionStage(
 
   async function runExtraction(event: KiroMemEvent): Promise<void> {
     try {
-      const result = spawnKiroCli(event, timeoutMs);
-      const raw = await result;
-      const record = parseMemoryRecord(raw);
+      const rawRecords = await invokeCompressor(event, timeoutMs, maxRetries);
 
-      // Overwrite required fields from the source event
-      const enriched = {
-        ...record,
-        namespace: event.namespace,
-        source_event_ids: [event.event_id],
-        strategy: 'llm-summary' as const,
-      };
+      for (let i = 0; i < rawRecords.length; i++) {
+        const raw = rawRecords[i]!;
+        const recordId = `mr_${ulid()}`;
 
-      await storage.putMemoryRecord(enriched);
+        const enriched = {
+          record_id: recordId,
+          namespace: event.namespace,
+          strategy: 'llm-summary',
+          source_event_ids: [event.event_id],
+          created_at: new Date().toISOString(),
+          title: raw.title,
+          summary: raw.summary,
+          facts: raw.facts,
+          concepts: raw.concepts,
+          files_touched: raw.files,
+          observation_type: raw.type,
+        };
+
+        const record = parseMemoryRecord(enriched);
+        await storage.putMemoryRecord(record);
+      }
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : String(error);

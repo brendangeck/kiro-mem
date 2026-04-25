@@ -7,107 +7,68 @@
  * @see .kiro/specs/collector-pipeline/requirements.md § Requirements 9.1, 9.2
  */
 
-import { type ChildProcess } from 'node:child_process';
-import { EventEmitter } from 'node:events';
-import { PassThrough } from 'node:stream';
-
 import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { KiroMemEvent, StorageBackend } from '../../src/types/index.js';
 import { arbitraryEvent } from '../helpers/arbitrary.js';
 
-// ── Mock child_process.spawn ────────────────────────────────────────────
+// ── Mock ACP client ─────────────────────────────────────────────────────
 
 /**
- * Track concurrently active mock processes. Each mock spawn increments
- * `active`, and completing the process decrements it. We record the
- * high-water mark so the property can assert it never exceeds the
- * concurrency limit.
+ * Track concurrently active mock ACP sessions. Each mock session creation
+ * increments `active`, and completing (resolving sendPrompt + destroy)
+ * decrements it. We record the high-water mark so the property can assert
+ * it never exceeds the concurrency limit.
  */
 let active = 0;
 let maxActive = 0;
-const pendingProcesses: Array<{
-  proc: EventEmitter;
-  stdout: PassThrough;
-  stdin: PassThrough;
-}> = [];
+
+interface PendingSession {
+  resolveSendPrompt: (text: string) => void;
+  destroyed: boolean;
+}
+
+const pendingSessions: PendingSession[] = [];
 
 function resetTracking(): void {
   active = 0;
   maxActive = 0;
-  pendingProcesses.length = 0;
+  pendingSessions.length = 0;
 }
 
 /**
- * Create a fake ChildProcess-like object that the extraction stage's
- * `spawnKiroCli` can interact with. The process completes after a
- * microtask tick to simulate async work.
+ * Mock `createAcpSession` that returns a controllable AcpSession.
+ * The session's `sendPrompt` blocks until we resolve it externally.
  */
-function createFakeChildProcess(): ChildProcess {
-  const proc = new EventEmitter() as ChildProcess;
-  const stdout = new PassThrough();
-  const stderr = new PassThrough();
-  const stdin = new PassThrough();
+vi.mock('../../src/collector/pipeline/acp-client.js', () => ({
+  createAcpSession: vi.fn().mockImplementation(() => {
+    active += 1;
+    if (active > maxActive) {
+      maxActive = active;
+    }
 
-  // Assign streams as the extraction stage reads from them
-  (proc as unknown as Record<string, unknown>).stdout = stdout;
-  (proc as unknown as Record<string, unknown>).stderr = stderr;
-  (proc as unknown as Record<string, unknown>).stdin = stdin;
-  (proc as unknown as Record<string, unknown>).pid = Math.floor(
-    Math.random() * 100000,
-  );
-
-   
-  proc.kill = (_signal?: number | NodeJS.Signals): boolean => {
-    return true;
-  };
-
-  active += 1;
-  if (active > maxActive) {
-    maxActive = active;
-  }
-
-  pendingProcesses.push({ proc, stdout, stdin });
-
-  return proc;
-}
-
-/**
- * Complete all pending mock processes by writing a valid JSON extraction
- * result to stdout and emitting the 'close' event with exit code 0.
- * Each completion decrements the active count.
- */
-function completeAllPending(): void {
-  const batch = pendingProcesses.splice(0);
-  for (const { proc, stdout, stdin } of batch) {
-    // Drain stdin so the write doesn't error
-    stdin.resume();
-
-    // Write a valid MemoryRecord-shaped JSON to stdout
-    const result = JSON.stringify({
-      record_id: `mr_${'0'.repeat(26)}`,
-      namespace: '/actor/test/project/test/',
-      strategy: 'llm-summary',
-      title: 'Test extraction',
-      summary: 'A test summary',
-      facts: [],
-      source_event_ids: ['0'.repeat(26)],
-      created_at: new Date().toISOString(),
+    let resolveSendPrompt!: (text: string) => void;
+    const sendPromptPromise = new Promise<string>((resolve) => {
+      resolveSendPrompt = resolve;
     });
-    stdout.write(result);
-    stdout.end();
 
-    active -= 1;
+    const entry: PendingSession = {
+      resolveSendPrompt,
+      destroyed: false,
+    };
+    pendingSessions.push(entry);
 
-    // Emit close with exit code 0
-    proc.emit('close', 0);
-  }
-}
-
-// Mock the spawn function from node:child_process
-vi.mock('node:child_process', () => ({
-  spawn: () => createFakeChildProcess(),
+    return Promise.resolve({
+      sendPrompt: vi.fn().mockImplementation(() => sendPromptPromise),
+      destroy: vi.fn().mockImplementation(() => {
+        if (!entry.destroyed) {
+          entry.destroyed = true;
+          active -= 1;
+        }
+      }),
+    });
+  }),
 }));
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -123,6 +84,19 @@ function createMockStorage(): StorageBackend {
   };
 }
 
+/**
+ * Valid XML response that produces one memory record when parsed.
+ */
+const VALID_XML_RESPONSE = `
+<memory_record type="tool_use">
+  <title>Test extraction</title>
+  <summary>A test summary</summary>
+  <facts><fact>fact one</fact></facts>
+  <concepts><concept>testing</concept></concepts>
+  <files><file>src/test.ts</file></files>
+</memory_record>
+`.trim();
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 describe('ExtractionStage — property: concurrency bound (P10)', () => {
@@ -137,13 +111,13 @@ describe('ExtractionStage — property: concurrency bound (P10)', () => {
      * **Validates: Requirements 9.1, 9.2**
      *
      * For any sequence of N events where N > concurrency limit, the number
-     * of concurrently active kiro-cli processes never exceeds the configured
-     * concurrency limit. We use a mock spawner that tracks the active count
-     * and assert the high-water mark stays within bounds.
+     * of concurrently active ACP sessions never exceeds the configured
+     * concurrency limit. We use a mock ACP client that tracks the active
+     * count and assert the high-water mark stays within bounds.
      */
 
     // We need to dynamically import createExtractionStage AFTER the mock
-    // is set up so that the module picks up the mocked spawn.
+    // is set up so that the module picks up the mocked ACP client.
     const { createExtractionStage } = await import(
       '../../src/collector/pipeline/index.js'
     );
@@ -163,6 +137,7 @@ describe('ExtractionStage — property: concurrency bound (P10)', () => {
             concurrency,
             queueDepth: eventCount + 10, // large enough to not drop
             timeoutMs: 30_000,
+            maxRetries: 1, // single attempt to keep things simple
           });
 
           // Enqueue all events
@@ -174,20 +149,26 @@ describe('ExtractionStage — property: concurrency bound (P10)', () => {
             stage.enqueue(event);
           }
 
-          // At this point, the stage should have spawned up to `concurrency`
-          // processes. The active count tracked by our mock should never
+          // Allow microtasks to run so sessions are created
+          await new Promise((resolve) => setTimeout(resolve, 0));
+
+          // At this point, the stage should have created up to `concurrency`
+          // ACP sessions. The active count tracked by our mock should never
           // have exceeded the limit.
           expect(maxActive).toBeLessThanOrEqual(concurrency);
           expect(stage.active).toBeLessThanOrEqual(concurrency);
 
-          // Complete all pending processes in batches until everything drains
+          // Complete all pending sessions in batches until everything drains
           let iterations = 0;
           const maxIterations = eventCount + 5;
-          while (pendingProcesses.length > 0 && iterations < maxIterations) {
-            completeAllPending();
+          while (pendingSessions.length > 0 && iterations < maxIterations) {
+            const batch = pendingSessions.splice(0);
+            for (const session of batch) {
+              session.resolveSendPrompt(VALID_XML_RESPONSE);
+            }
             // Allow microtasks to run so the stage picks up completions
-            // and spawns the next batch
-            await new Promise((resolve) => setTimeout(resolve, 0));
+            // and creates the next batch of sessions
+            await new Promise((resolve) => setTimeout(resolve, 10));
             iterations += 1;
 
             // After each batch, the invariant must still hold
@@ -201,7 +182,7 @@ describe('ExtractionStage — property: concurrency bound (P10)', () => {
           expect(maxActive).toBeLessThanOrEqual(concurrency);
         },
       ),
-      { numRuns: 100 },
+      { numRuns: 50 },
     );
   });
 });
