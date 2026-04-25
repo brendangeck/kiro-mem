@@ -364,12 +364,23 @@ export async function invokeCompressor(
 
       const responseText = await session.sendPrompt(xmlPayload);
 
-      // Empty response = valid skip
+      // Empty response = valid skip (compressor intentionally declined
+      // to emit a record). Return [] so the outer loop does nothing.
       if (!responseText.trim()) {
         return [];
       }
 
-      // Check for garbage (conversational response)
+      // Explicit skip token — the compressor may emit `<skip/>` (or a
+      // `<skip ...>` variant) instead of an empty body. Treat the same
+      // as an empty response.
+      if (/<skip\b/.test(responseText)) {
+        return [];
+      }
+
+      // Check for garbage (conversational response). isGarbageResponse
+      // returns true only for non-empty text that contains neither
+      // `<memory_record` nor `<skip` — so reaching this branch means
+      // the model produced prose instead of structured XML.
       if (isGarbageResponse(responseText)) {
         lastError = new Error(
           `compressor returned non-XML response (attempt ${String(attempt + 1)}/${String(maxRetries)})`,
@@ -381,6 +392,25 @@ export async function invokeCompressor(
       }
 
       const records = parseMemoryXml(responseText);
+
+      // The response contained `<memory_record` markers (otherwise
+      // isGarbageResponse above would have returned true) but the
+      // parser extracted zero valid records. This means every block
+      // failed validation — invalid `type` attribute, missing/empty
+      // `title` or `summary`, or malformed/truncated XML. Returning []
+      // here would silently drop what the model clearly intended to be
+      // output; instead we treat it as a retryable failure so the
+      // circuit breaker gets a chance to try again.
+      if (records.length === 0) {
+        lastError = new Error(
+          `compressor returned <memory_record> markers but no parseable records (attempt ${String(attempt + 1)}/${String(maxRetries)})`,
+        );
+        console.warn(
+          `extraction produced no valid records for event ${event.event_id}: ${lastError.message}`,
+        );
+        continue;
+      }
+
       return records;
     } catch (error: unknown) {
       lastError = error instanceof Error ? error : new Error(String(error));

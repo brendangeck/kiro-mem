@@ -159,21 +159,54 @@ export async function createAcpSession(
    * process has not exited. Safe to call multiple times; errors from
    * killing an already-dead process are swallowed.
    *
+   * The 2-second SIGKILL is scheduled via `setTimeout`; on normal exit
+   * we clear that timer so it does not keep the event loop alive.
+   * A single `child.on('exit')` handler fires once per process lifetime
+   * (Node guarantees `exit` emits exactly once) and cancels any pending
+   * kill timer regardless of which path triggered exit — SIGTERM
+   * acknowledged by the child, SIGKILL eventually landing, or the
+   * child exiting on its own.
+   *
    * @see Requirements 1.7
    */
+  let killTimer: NodeJS.Timeout | null = null;
+  child.on('exit', () => {
+    if (killTimer !== null) {
+      clearTimeout(killTimer);
+      killTimer = null;
+    }
+  });
+
   function destroy(): void {
+    // If the child has already exited (e.g. the ACP process crashed on
+    // its own, or a previous destroy() already ran), skip both signals.
+    // Both `exitCode` and `signalCode` start as `null` on a live child
+    // and become non-null on exit. We treat `undefined` (observed only
+    // in test doubles that don't emulate these fields) as "still alive"
+    // so destroy remains safe against minimal mocks.
+    const hasExited =
+      (child.exitCode !== null && child.exitCode !== undefined) ||
+      (child.signalCode !== null && child.signalCode !== undefined);
+    if (hasExited) return;
+
     try {
       child.kill('SIGTERM');
     } catch {
       /* already dead */
     }
-    setTimeout(() => {
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        /* already dead */
-      }
-    }, 2000);
+
+    // Only arm SIGKILL if one isn't already scheduled. Multiple destroy()
+    // calls should not stack timers.
+    if (killTimer === null) {
+      killTimer = setTimeout(() => {
+        killTimer = null;
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* already dead */
+        }
+      }, 2000);
+    }
   }
 
   // ── Handshake ────────────────────────────────────────────────────────

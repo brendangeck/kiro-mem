@@ -221,6 +221,58 @@ describe('invokeCompressor', () => {
     expect(mockSessions).toHaveLength(2);
   });
 
+  /**
+   * A response that contains `<memory_record` markers (so it's not
+   * garbage) but whose blocks all fail validation (invalid type,
+   * missing title/summary, or truncation) SHOULD trigger a retry
+   * rather than silently return []. This guards against data loss
+   * when the model gets halfway to structured output but doesn't
+   * quite land.
+   */
+  it('retries when <memory_record> markers exist but no records parse', async () => {
+    const invalidTypeXml =
+      '<memory_record type="bogus_not_in_enum">' +
+      '<title>Has a title</title>' +
+      '<summary>Has a summary</summary>' +
+      '</memory_record>';
+
+    responseQueue.push(invalidTypeXml, SINGLE_RECORD_XML);
+
+    const { invokeCompressor } = await import(
+      '../../src/collector/pipeline/index.js'
+    );
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const event = makeValidEvent();
+    const records = await invokeCompressor(event, 30_000, 3);
+
+    // First attempt produced zero parseable records, second succeeded.
+    expect(records).toHaveLength(1);
+    expect(mockSessions).toHaveLength(2);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('no valid records'),
+    );
+  });
+
+  /**
+   * Explicit skip token `<skip/>` short-circuits to [] without
+   * retrying. This is the counterpart to the empty-response skip.
+   */
+  it('treats <skip/> responses as a valid skip (returns [] without retrying)', async () => {
+    responseQueue.push('<skip/>');
+
+    const { invokeCompressor } = await import(
+      '../../src/collector/pipeline/index.js'
+    );
+
+    const event = makeValidEvent();
+    const records = await invokeCompressor(event, 30_000, 3);
+
+    expect(records).toEqual([]);
+    // Only one session — no retry.
+    expect(mockSessions).toHaveLength(1);
+  });
+
   it('always destroys ACP session on success', async () => {
     responseQueue.push(SINGLE_RECORD_XML);
 

@@ -429,4 +429,51 @@ describe('ACP Client — destroy', () => {
     expect(fakeChild.kill).toHaveBeenCalledWith('SIGTERM');
     expect(fakeChild.kill).toHaveBeenCalledWith('SIGKILL');
   });
+
+  /**
+   * @see Requirements 1.7
+   *
+   * The 2-second SIGKILL fallback must be cancelled when the child
+   * exits cleanly, otherwise the pending timer keeps the Node event
+   * loop alive for up to 2s per extraction. With retries and
+   * concurrency that adds up.
+   */
+  it('clears the pending SIGKILL timer when the child exits before 2s', async () => {
+    const session = await createSession();
+
+    session.destroy();
+    expect(fakeChild.kill).toHaveBeenCalledWith('SIGTERM');
+
+    // Simulate the child exiting in response to SIGTERM before the
+    // 2-second SIGKILL fallback fires.
+    fakeChild.emit('exit', 0, null);
+
+    vi.advanceTimersByTime(2000);
+
+    // SIGKILL should NOT have been sent — the exit handler cancelled it.
+    expect(fakeChild.kill).not.toHaveBeenCalledWith('SIGKILL');
+  });
+
+  /**
+   * @see Requirements 1.7
+   *
+   * Guards against a regression where concurrent `destroy()` calls
+   * would stack overlapping SIGKILL timers.
+   */
+  it('does not stack SIGKILL timers across repeated destroy() calls', async () => {
+    const session = await createSession();
+
+    session.destroy();
+    session.destroy();
+    session.destroy();
+
+    // Three destroys, but only one pending timer — advancing time
+    // should fire SIGKILL exactly once.
+    vi.advanceTimersByTime(2000);
+
+    const sigkillCalls = fakeChild.kill.mock.calls.filter(
+      (c) => c[0] === 'SIGKILL',
+    );
+    expect(sigkillCalls).toHaveLength(1);
+  });
 });
