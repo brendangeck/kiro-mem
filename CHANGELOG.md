@@ -1,3 +1,9 @@
+## [0.6.0](https://github.com/brendangeck/kiro-learn/compare/v0.5.1...v0.6.0) (2026-04-25)
+
+### Features
+
+* xml extraction pipeline ([#9](https://github.com/brendangeck/kiro-learn/issues/9)) ([f5ecaa7](https://github.com/brendangeck/kiro-learn/commit/f5ecaa7414475bd7fb821c7e74993ee6b6177b5b))
+
 ## [0.5.1](https://github.com/brendangeck/kiro-learn/compare/v0.5.0...v0.5.1) (2026-04-25)
 
 ### Bug Fixes
