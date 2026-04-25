@@ -1,3 +1,9 @@
+## [0.5.1](https://github.com/brendangeck/kiro-learn/compare/v0.5.0...v0.5.1) (2026-04-25)
+
+### Bug Fixes
+
+* removing generated agent config and adding kiro-cli integ test ([#8](https://github.com/brendangeck/kiro-learn/issues/8)) ([f6b5bd6](https://github.com/brendangeck/kiro-learn/commit/f6b5bd6b16e7200055e7ead00523d8531d4b4df9))
+
 ## [0.5.0](https://github.com/brendangeck/kiro-learn/compare/v0.4.0...v0.5.0) (2026-04-25)
 
 ### Features
