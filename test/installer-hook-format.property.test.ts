@@ -158,9 +158,7 @@ describe('Installer — property: hook command format (P3)', () => {
           // Clean up project dirs
           if (projectRoot !== undefined) {
             try {
-              // Remove the top-level dir under tmpHome
-              const topDir = join(tmpHome, hasProject && projectDepth > 1 ? 'dir0' : projectName);
-              rmSync(topDir, { recursive: true, force: true });
+              rmSync(projectRoot, { recursive: true, force: true });
             } catch {
               // Ignore
             }

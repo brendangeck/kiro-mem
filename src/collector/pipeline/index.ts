@@ -359,8 +359,15 @@ function spawnKiroCli(
   timeoutMs: number,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const child = spawn('kiro-cli', ['extract'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const content = extractBodyContent(event);
+    const child = spawn('kiro-cli', [
+      'chat',
+      '--no-interactive',
+      '--agent',
+      'kiro-learn-compressor',
+      content,
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     let stdout = '';
@@ -398,16 +405,20 @@ function spawnKiroCli(
         return;
       }
       try {
-        resolve(JSON.parse(stdout));
+        // kiro-cli chat output includes ANSI escape codes and a "> " prefix.
+        // Strip ANSI codes, then extract the first JSON object from the output.
+        // eslint-disable-next-line no-control-regex
+        const clean = stdout.replace(/\x1b\[[0-9;]*m/g, '');
+        const jsonMatch = clean.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          reject(new Error('kiro-cli returned no JSON object in output'));
+          return;
+        }
+        resolve(JSON.parse(jsonMatch[0]));
       } catch {
         reject(new Error('kiro-cli returned invalid JSON'));
       }
     });
-
-    // Pass event body content via stdin
-    const content = extractBodyContent(event);
-    child.stdin.write(content);
-    child.stdin.end();
   });
 }
 

@@ -65,6 +65,21 @@ const { cmdInit, INSTALL_DIR } = await import('../src/installer/index.js');
 vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
+// Mock process.kill so the fake PID 99999 from the spawn mock is treated
+// as non-existent (ESRCH). This prevents stopDaemon from entering the
+// busy-wait/SIGKILL path on a PID that doesn't belong to us.
+const originalKill = process.kill.bind(process);
+vi.spyOn(process, 'kill').mockImplementation(
+  ((pid: number, signal?: string | number): true => {
+    if (pid === 99999) {
+      const err = new Error('kill ESRCH') as NodeJS.ErrnoException;
+      err.code = 'ESRCH';
+      throw err;
+    }
+    return originalKill(pid, signal as string);
+  }) as typeof process.kill,
+);
+
 // ── Test data ───────────────────────────────────────────────────────────
 
 const DB_CONTENT = 'original-database-content-12345';

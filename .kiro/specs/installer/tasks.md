@@ -77,7 +77,7 @@ Implement the kiro-learn installer — the `kiro-learn` CLI that ships as the np
     - _Requirements: 14.1, 14.2, 14.3_
 
   - [x] 2.7 Implement `writeAgentConfigs(scope)`
-    - Generate `kiro-learn.json` with four hooks (`agentSpawn`, `userPromptSubmit`, `postToolUse` with `matcher: "*"`, `stop`), each command using absolute path to `~/.kiro-learn/bin/shim` with ` || true` suffix
+    - Generate `kiro-learn.json` with four hooks (`agentSpawn`, `userPromptSubmit`, `postToolUse` with `matcher: "*"`, `stop`), each command using absolute path to `~/.kiro-learn/bin/shim` with `|| true` suffix
     - Write `kiro-learn.json` to `~/.kiro/agents/` (always) and `<projectRoot>/.kiro/agents/` (when project detected)
     - Generate `kiro-learn-compressor.json` with extraction prompt, empty `tools` and `allowedTools` arrays
     - Write `kiro-learn-compressor.json` to `~/.kiro/agents/` only (global scope only)
@@ -223,7 +223,7 @@ Implement the kiro-learn installer — the `kiro-learn` CLI that ships as the np
 
   - [x] 9.3 Write property test: Hook command format [PBT]
     - **Property 3: Hook command format**
-    - For any generated `kiro-learn.json` agent config, every `command` field contains the absolute path to `~/.kiro-learn/bin/shim` (with actual home directory, no tilde) and ends with ` || true`
+    - For any generated `kiro-learn.json` agent config, every `command` field contains the absolute path to `~/.kiro-learn/bin/shim` (with actual home directory, no tilde) and ends with `|| true`
     - **Validates: Requirements 6.4**
 
   - [x] 9.4 Write property test: Uninstall --keep-data selective preservation [PBT]
