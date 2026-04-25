@@ -483,17 +483,21 @@ export function createExtractionStage(
     try {
       const result = spawnKiroCli(event, timeoutMs);
       const raw = await result;
-      const record = parseMemoryRecord(raw);
 
-      // Overwrite required fields from the source event
+      // Enrich with required fields before validation — the compressor
+      // only returns title/summary/facts/concepts/observation_type/files_touched.
+      // The pipeline adds record_id, namespace, strategy, source_event_ids, created_at.
       const enriched = {
-        ...record,
+        ...(raw as Record<string, unknown>),
+        record_id: `mr_${event.event_id}`,
         namespace: event.namespace,
         source_event_ids: [event.event_id],
-        strategy: 'llm-summary' as const,
+        strategy: 'llm-summary',
+        created_at: new Date().toISOString(),
       };
 
-      await storage.putMemoryRecord(enriched);
+      const record = parseMemoryRecord(enriched);
+      await storage.putMemoryRecord(record);
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : String(error);
