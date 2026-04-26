@@ -3,8 +3,15 @@
  *
  * Requires:
  * - kiro-cli installed and on PATH with ACP support
- * - kiro-learn-compressor agent config at ~/.kiro/agents/kiro-learn-compressor.json
  * - Network access to Amazon Bedrock (via kiro-cli)
+ *
+ * The compressor agent config at `~/.kiro/agents/kiro-learn-compressor.json`
+ * is rewritten from the current source in a `beforeAll` hook — the test
+ * cannot rely on whatever stale version the developer happens to have
+ * installed locally. An older kiro-learn install shipped a JSON-output
+ * prompt; without this refresh the model returns JSON and every XML
+ * assertion fails. The refresh makes the test hermetic at the cost of
+ * overwriting the on-disk compressor for the duration of the test run.
  *
  * Run with: npm run test:integ
  *
@@ -16,10 +23,10 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { createAcpSession } from '../../src/collector/pipeline/acp-client.js';
 import { frameEvent } from '../../src/collector/pipeline/xml-framer.js';
@@ -27,6 +34,7 @@ import {
   parseMemoryXml,
   isGarbageResponse,
 } from '../../src/collector/pipeline/xml-parser.js';
+import { writeCompressorAgent } from '../../src/installer/index.js';
 import { parseMemoryRecord } from '../../src/types/schemas.js';
 import type { KiroMemEvent } from '../../src/types/schemas.js';
 
@@ -42,20 +50,25 @@ function acpAvailable(): boolean {
   }
 }
 
-/** Check if the compressor agent config exists. */
-function compressorConfigExists(): boolean {
-  return existsSync(
-    join(homedir(), '.kiro', 'agents', 'kiro-learn-compressor.json'),
-  );
-}
-
 // ── Tests ───────────────────────────────────────────────────────────────
 
-const canRun = acpAvailable() && compressorConfigExists();
+const canRun = acpAvailable();
 
 describe.skipIf(!canRun)(
   'Extraction pipeline — ACP + XML integration',
   () => {
+    beforeAll(() => {
+      // Refresh ~/.kiro/agents/kiro-learn-compressor.json from the
+      // current source. kiro-cli resolves agent names by scanning the
+      // global agents directory, so any stale on-disk prompt from an
+      // older kiro-learn install would drive the model toward its old
+      // output format. Writing from source is the only way to make the
+      // XML assertions below deterministic.
+      const globalAgentsDir = join(homedir(), '.kiro', 'agents');
+      mkdirSync(globalAgentsDir, { recursive: true });
+      writeCompressorAgent(globalAgentsDir);
+    });
+
     // Sample event that simulates a real tool_use event
     const sampleEvent: KiroMemEvent = {
       event_id: '01JF8ZS4Y00000000000000000',

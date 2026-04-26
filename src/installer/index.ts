@@ -884,7 +884,30 @@ export function writeAgentConfigs(scope: InstallScope): void {
   }
 
   // ── Agent 2: kiro-learn-compressor.json (extraction agent) ──
+  writeCompressorAgent(globalAgentsDir);
+}
 
+/**
+ * Write the kiro-learn-compressor agent config (the XML extraction
+ * agent) into the given agents directory.
+ *
+ * The compressor is hand-authored — it is deliberately out of scope for
+ * the seed-then-merge flow (Requirement 8) because it ships with zero
+ * tools and a fixed XML-extraction prompt. Writing it through a
+ * dedicated helper (instead of inlining in {@link writeAgentConfigs})
+ * lets the extraction-pipeline integration test refresh the on-disk
+ * prompt to the current source before running, which keeps that test
+ * hermetic regardless of what the developer has previously installed.
+ *
+ * Global scope only — no project-scoped compressor is ever written
+ * (Requirement 8.3).
+ *
+ * @param agentsDir The absolute path of the `.kiro/agents/` directory
+ *                  to write into. The directory must already exist.
+ *
+ * @see Requirements 6.8, 6.9, 8.1, 8.2, 8.3
+ */
+export function writeCompressorAgent(agentsDir: string): void {
   const compressorPrompt =
     'You are a memory extraction agent for kiro-learn. Your ONLY job is to analyze tool-use observations and produce structured memory records.\n' +
     '\n' +
@@ -934,7 +957,7 @@ export function writeAgentConfigs(scope: InstallScope): void {
   };
 
   writeFileSync(
-    path.join(globalAgentsDir, 'kiro-learn-compressor.json'),
+    path.join(agentsDir, 'kiro-learn-compressor.json'),
     JSON.stringify(compressorConfig, null, 2) + '\n',
   );
 }
